@@ -89,7 +89,16 @@ class UserRepository @Inject constructor(
     }
 
     suspend fun removeCommuteEntry(uid: String, entry: CommuteEntry): Result<Unit> = runCatching {
-        users().document(uid).update("commuteSchedule", FieldValue.arrayRemove(entry)).await()
+        val userRef = users().document(uid)
+        firestore.runTransaction { tx ->
+            val currentSchedule = tx.get(userRef).toObject<User>()?.commuteSchedule.orEmpty()
+            tx.update(userRef, "commuteSchedule", filterOutCommuteEntry(currentSchedule, entry))
+        }.await()
         Unit
     }
 }
+
+internal fun filterOutCommuteEntry(
+    schedule: List<CommuteEntry>,
+    entry: CommuteEntry
+): List<CommuteEntry> = schedule.filterNot { it == entry }

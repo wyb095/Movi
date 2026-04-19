@@ -1,5 +1,7 @@
 package com.group2.movi.ui.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
@@ -31,25 +34,33 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerComposable
 import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.domain.model.CrossingPort
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskCategory
@@ -92,38 +103,43 @@ fun HomeScreen(
                 onDetourChange = vm::setMaxDetourMinutes
             )
 
-            when {
-                state.loading -> LoadingBox()
-                state.tasks.isEmpty() -> EmptyState(
-                    title = if (state.hasCommuteSchedule) {
-                        "No tasks fit your commute right now"
-                    } else {
-                        "No open tasks right now"
-                    },
-                    subtitle = if (state.hasCommuteSchedule) {
-                        "Try widening your detour filter or add more commute entries in Schedule."
-                    } else {
-                        "Pull down to refresh or check back soon."
-                    }
-                )
-                else -> {
-                    if (mode == DiscoverMode.MAP) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    state.loading -> LoadingBox()
+                    state.tasks.isEmpty() -> EmptyState(
+                        title = if (state.hasCommuteSchedule) {
+                            "No tasks fit your commute right now"
+                        } else {
+                            "No open tasks right now"
+                        },
+                        subtitle = if (state.hasCommuteSchedule) {
+                            "Try widening your detour filter or add more commute entries in Schedule."
+                        } else {
+                            "Pull down to refresh or check back soon."
+                        }
+                    )
+                    mode == DiscoverMode.MAP -> {
                         TaskMap(
                             tasks = state.tasks,
-                            onTaskClick = onTaskClick
+                            commuteCorridor = state.commuteCorridor,
+                            onTaskClick = onTaskClick,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(state.tasks, key = { it.task.taskId }) { card ->
-                            TaskCard(
-                                task = card.task,
-                                matchReason = card.match?.reason,
-                                detourMinutes = card.match?.detourMinutes,
-                                onClick = { onTaskClick(card.task.taskId) }
-                            )
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(state.tasks, key = { it.task.taskId }) { card ->
+                                TaskCard(
+                                    task = card.task,
+                                    matchReason = card.match?.reason,
+                                    detourMinutes = card.match?.detourMinutes,
+                                    onClick = { onTaskClick(card.task.taskId) }
+                                )
+                            }
                         }
                     }
                 }
@@ -190,23 +206,76 @@ private fun DiscoverToolbar(
 @Composable
 private fun TaskMap(
     tasks: List<DiscoverTask>,
-    onTaskClick: (String) -> Unit
+    commuteCorridor: List<GeoPoint>,
+    onTaskClick: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val first = tasks.firstOrNull()?.task?.let { taskMarkerPoint(it) }
+    val mapPoints = remember(tasks, commuteCorridor) {
+        buildList {
+            tasks.forEach { add(taskMarkerPoint(it.task)) }
+            addAll(commuteCorridor)
+        }
+    }
+    val first = mapPoints.firstOrNull()
     val cameraState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(
             first?.let { LatLng(it.latitude, it.longitude) } ?: LatLng(22.5431, 114.0579),
             10.5f
         )
     }
+    var mapLoaded by remember { mutableStateOf(false) }
+    val corridorLatLngs = remember(commuteCorridor) {
+        commuteCorridor.map { LatLng(it.latitude, it.longitude) }
+    }
+
+    LaunchedEffect(mapLoaded, mapPoints) {
+        if (!mapLoaded || mapPoints.isEmpty()) return@LaunchedEffect
+
+        val latLngs = mapPoints
+            .map { LatLng(it.latitude, it.longitude) }
+            .distinctBy { it.latitude to it.longitude }
+
+        if (latLngs.size == 1) {
+            cameraState.move(CameraUpdateFactory.newLatLngZoom(latLngs.first(), 10.5f))
+        } else {
+            val bounds = LatLngBounds.Builder().apply {
+                latLngs.forEach(::include)
+            }.build()
+            cameraState.move(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+        }
+    }
+
     GoogleMap(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(240.dp)
-            .padding(horizontal = 16.dp),
+        modifier = modifier.padding(horizontal = 16.dp),
         cameraPositionState = cameraState,
-        properties = MapProperties(isMyLocationEnabled = false)
+        properties = MapProperties(isMyLocationEnabled = false),
+        onMapLoaded = { mapLoaded = true }
     ) {
+        if (corridorLatLngs.size >= 3) {
+            Polyline(
+                points = corridorLatLngs,
+                color = MoviAccent.copy(alpha = 0.3f),
+                width = 10f
+            )
+            listOf(
+                corridorLatLngs.first() to "Commute start",
+                corridorLatLngs.last() to "Commute end"
+            ).forEach { (point, title) ->
+                MarkerComposable(
+                    state = MarkerState(position = point),
+                    title = title
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color.Gray)
+                            .border(2.dp, Color.White, CircleShape)
+                    )
+                }
+            }
+        }
+
         tasks.forEach { card ->
             val point = taskMarkerPoint(card.task)
             Marker(

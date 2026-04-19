@@ -24,6 +24,7 @@ data class TaskMatchInsight(
 
 private const val DEFAULT_SPEED_KMH = 24.0
 private const val SERVICE_BUFFER_MINUTES = 10
+private const val CORRIDOR_BUFFER_KM = 3.0
 private val GEO_REGEX = Regex("""(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)""")
 private val MAPS_REGEX = Regex("""@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)""")
 
@@ -77,6 +78,52 @@ fun estimateDetourMinutes(task: Task): Int {
     return ((totalKm / DEFAULT_SPEED_KMH) * 60.0 + SERVICE_BUFFER_MINUTES).roundToInt().coerceAtLeast(8)
 }
 
+internal fun pointToSegmentKm(p: GeoPoint, a: GeoPoint, b: GeoPoint): Double {
+    fun toPlanar(point: GeoPoint, refLatRadians: Double): Pair<Double, Double> {
+        val x = point.longitude * 111.320 * cos(refLatRadians)
+        val y = point.latitude * 110.574
+        return x to y
+    }
+
+    val refLatRadians = Math.toRadians((p.latitude + a.latitude + b.latitude) / 3.0)
+    val (px, py) = toPlanar(p, refLatRadians)
+    val (ax, ay) = toPlanar(a, refLatRadians)
+    val (bx, by) = toPlanar(b, refLatRadians)
+    val abx = bx - ax
+    val aby = by - ay
+    val abLengthSquared = (abx * abx) + (aby * aby)
+    if (abLengthSquared == 0.0) {
+        return sqrt(((px - ax) * (px - ax)) + ((py - ay) * (py - ay)))
+    }
+    val t = (((px - ax) * abx) + ((py - ay) * aby)) / abLengthSquared
+    val clamped = t.coerceIn(0.0, 1.0)
+    val closestX = ax + (abx * clamped)
+    val closestY = ay + (aby * clamped)
+    return sqrt(((px - closestX) * (px - closestX)) + ((py - closestY) * (py - closestY)))
+}
+
+internal fun commuteCorridor(entry: CommuteEntry): List<GeoPoint> {
+    return buildList {
+        entry.originLocation?.let(::add)
+        add(portCenter(entry.port))
+        entry.destinationLocation?.let(::add)
+    }
+}
+
+internal fun corridorDeviationKm(task: Task, entry: CommuteEntry): Double? {
+    val pickup = task.pickupLocation ?: return null
+    val dropoff = task.dropoffLocation ?: return null
+    val corridor = commuteCorridor(entry)
+    val segments = corridor.zipWithNext()
+    if (segments.isEmpty()) return null
+
+    fun nearestDistance(point: GeoPoint): Double = segments.minOf { (start, end) ->
+        pointToSegmentKm(point, start, end)
+    }
+
+    return nearestDistance(pickup) + nearestDistance(dropoff)
+}
+
 fun findBestMatch(
     task: Task,
     schedule: List<CommuteEntry>,
@@ -111,7 +158,14 @@ private fun computeMatch(
     ).toMinutes().toInt()
     if (minutesBeforeDeadline < -15) return null
 
-    val detourMinutes = estimateDetourMinutes(task)
+    val hasCompleteCorridor = entry.originLocation != null && entry.destinationLocation != null
+    val corridorDeviation = corridorDeviationKm(task, entry)
+    if (hasCompleteCorridor && corridorDeviation != null && corridorDeviation > CORRIDOR_BUFFER_KM) {
+        return null
+    }
+
+    val corridorDetourMinutes = estimateCorridorDetourMinutes(task, entry)
+    val detourMinutes = corridorDetourMinutes ?: estimateDetourMinutes(task)
     if (detourMinutes > 120) return null
 
     val timeScore = when {
@@ -129,13 +183,18 @@ private fun computeMatch(
         minutesBeforeDeadline >= 0 -> "$minutesBeforeDeadline min before deadline"
         else -> "${-minutesBeforeDeadline} min late risk"
     }
+    val reasonPrefix = if (corridorDetourMinutes != null) {
+        "Within your commute corridor · ~$detourMinutes min detour"
+    } else {
+        "Near ${CrossingPort.label(entry.port)} · ~$detourMinutes min fallback"
+    }
 
     return TaskMatchInsight(
         score = score,
         detourMinutes = detourMinutes,
         minutesBeforeDeadline = minutesBeforeDeadline,
         scheduleSummary = "${entry.dayOfWeek} ${entry.departureTime}",
-        reason = "Via ${CrossingPort.label(entry.port)} · ~$detourMinutes min detour · $deadlineLabel"
+        reason = "$reasonPrefix · $deadlineLabel"
     )
 }
 
@@ -164,4 +223,12 @@ private fun haversineKm(a: GeoPoint, b: GeoPoint): Double {
     val h = sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
     return 2 * earthRadiusKm * asin(sqrt(h))
+}
+
+private fun estimateCorridorDetourMinutes(task: Task, entry: CommuteEntry): Int? {
+    if (entry.originLocation == null || entry.destinationLocation == null) return null
+    val deviationKm = corridorDeviationKm(task, entry) ?: return null
+    return (((deviationKm * 2) / DEFAULT_SPEED_KMH) * 60.0 + SERVICE_BUFFER_MINUTES)
+        .roundToInt()
+        .coerceAtLeast(SERVICE_BUFFER_MINUTES)
 }

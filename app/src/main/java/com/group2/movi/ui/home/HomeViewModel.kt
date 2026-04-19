@@ -2,10 +2,12 @@ package com.group2.movi.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.data.repository.TaskRepository
 import com.group2.movi.data.repository.UserRepository
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskMatchInsight
+import com.group2.movi.domain.model.commuteCorridor
 import com.group2.movi.domain.model.findBestMatch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,6 +32,7 @@ data class HomeUiState(
     val selectedCategory: String? = null,
     val maxDetourMinutes: Float = 60f,
     val hasCommuteSchedule: Boolean = false,
+    val commuteCorridor: List<GeoPoint> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null
 )
@@ -57,9 +60,12 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(rawTasks, me, maxDetourMinutes) { tasks, user, detour ->
+            combine(rawTasks, me, maxDetourMinutes, selectedCategory) { tasks, user, detour, category ->
                 val schedule = user?.commuteSchedule.orEmpty()
                 val hasSchedule = schedule.isNotEmpty()
+                val highlightedCorridor = schedule.firstNotNullOfOrNull { entry ->
+                    commuteCorridor(entry).takeIf { it.size >= 3 }
+                } ?: emptyList()
                 val mapped = tasks.map { task ->
                     DiscoverTask(
                         task = task,
@@ -80,16 +86,15 @@ class HomeViewModel @Inject constructor(
                             .thenByDescending { it.task.createdAt?.seconds ?: 0L }
                     )
                 }
-                Triple(visible, hasSchedule, detour)
-            }.collect { (list, hasSchedule, detour) ->
-                _state.value = HomeUiState(
-                    tasks = list,
-                    selectedCategory = selectedCategory.value,
+                HomeUiState(
+                    tasks = visible,
+                    selectedCategory = category,
                     maxDetourMinutes = detour,
                     hasCommuteSchedule = hasSchedule,
+                    commuteCorridor = highlightedCorridor,
                     loading = false
                 )
-            }
+            }.collect { _state.value = it }
         }
     }
 

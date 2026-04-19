@@ -62,6 +62,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.group2.movi.domain.model.CrossingPort
 import com.group2.movi.domain.model.TaskCategory
+import com.group2.movi.ui.components.PlacePickerField
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -217,14 +218,15 @@ private fun Step1Category(state: PostFormState, vm: PostTaskViewModel) {
 private fun Step2Locations(state: PostFormState, vm: PostTaskViewModel) {
     Text("Where is it going?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     Text(
-        "Enter pickup and drop-off addresses. Paste a Google Maps link or lat,lng to enable map discovery and smarter matching.",
+        "Search pickup and drop-off with Google Places, or paste a Maps link as fallback.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    OutlinedTextField(
+    PlacePickerField(
+        label = "Pickup address",
         value = state.pickupAddress,
-        onValueChange = vm::setPickupAddress,
-        label = { Text("Pickup address") },
+        onPlaceSelected = vm::setPickupPlace,
+        onPasteFallback = vm::setPickupAddress,
         modifier = Modifier.fillMaxWidth()
     )
     state.pickupLocation?.let {
@@ -234,10 +236,11 @@ private fun Step2Locations(state: PostFormState, vm: PostTaskViewModel) {
             color = MaterialTheme.colorScheme.primary
         )
     }
-    OutlinedTextField(
+    PlacePickerField(
+        label = "Drop-off address",
         value = state.dropoffAddress,
-        onValueChange = vm::setDropoffAddress,
-        label = { Text("Drop-off address") },
+        onPlaceSelected = vm::setDropoffPlace,
+        onPasteFallback = vm::setDropoffAddress,
         modifier = Modifier.fillMaxWidth()
     )
     state.dropoffLocation?.let {

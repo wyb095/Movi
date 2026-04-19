@@ -73,12 +73,28 @@ class PostTaskViewModel @Inject constructor(
             pickupLocation = extractGeoPoint(v)
         )
     }
+
+    fun setPickupPlace(address: String, loc: GeoPoint, placeId: String) = _state.update {
+        it.copy(
+            pickupAddress = address,
+            pickupLocation = loc
+        )
+    }
+
     fun setDropoffAddress(v: String) = _state.update {
         it.copy(
             dropoffAddress = v,
             dropoffLocation = extractGeoPoint(v)
         )
     }
+
+    fun setDropoffPlace(address: String, loc: GeoPoint, placeId: String) = _state.update {
+        it.copy(
+            dropoffAddress = address,
+            dropoffLocation = loc
+        )
+    }
+
     fun setPort(v: String) = _state.update { it.copy(crossingPort = v) }
     fun setDirection(v: String) = _state.update { it.copy(direction = v) }
     fun setDeadline(epochMs: Long) = _state.update { it.copy(deadlineEpochMs = epochMs) }

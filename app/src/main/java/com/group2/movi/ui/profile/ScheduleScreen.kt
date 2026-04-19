@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,11 +45,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.domain.model.CommuteEntry
 import com.group2.movi.domain.model.CrossingPort
+import com.group2.movi.domain.model.extractGeoPoint
 import com.group2.movi.ui.components.EmptyState
+import com.group2.movi.ui.components.PlacePickerField
 import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,6 +131,24 @@ private fun ScheduleCard(entry: CommuteEntry, onDelete: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (entry.originAddress.isNotBlank()) {
+                    Text(
+                        "From: ${entry.originAddress}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (entry.destinationAddress.isNotBlank()) {
+                    Text(
+                        "To: ${entry.destinationAddress}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
@@ -141,13 +165,21 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onAdd: (CommuteEntry) -> Un
     var time by remember { mutableStateOf("18:00") }
     var port by remember { mutableStateOf(CrossingPort.FUTIAN) }
     var direction by remember { mutableStateOf("SZ_TO_HK") }
+    var originAddress by remember { mutableStateOf("") }
+    var originLocation by remember { mutableStateOf<GeoPoint?>(null) }
+    var destinationAddress by remember { mutableStateOf("") }
+    var destinationLocation by remember { mutableStateOf<GeoPoint?>(null) }
     val timeValid = isValidDepartureTime(time)
+    val canAdd = timeValid && originLocation != null && destinationLocation != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add commute") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
                 DropdownPicker(label = "Day", options = days, selected = day, onSelect = { day = it })
                 OutlinedTextField(
                     value = time,
@@ -176,12 +208,47 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onAdd: (CommuteEntry) -> Un
                     selected = direction,
                     onSelect = { direction = it }
                 )
+                PlacePickerField(
+                    label = "Origin (home / office)",
+                    value = originAddress,
+                    onPlaceSelected = { address, loc, _ ->
+                        originAddress = address
+                        originLocation = loc
+                    },
+                    onPasteFallback = { raw ->
+                        originAddress = raw
+                        originLocation = extractGeoPoint(raw)
+                    }
+                )
+                PlacePickerField(
+                    label = "Destination (office / home)",
+                    value = destinationAddress,
+                    onPlaceSelected = { address, loc, _ ->
+                        destinationAddress = address
+                        destinationLocation = loc
+                    },
+                    onPasteFallback = { raw ->
+                        destinationAddress = raw
+                        destinationLocation = extractGeoPoint(raw)
+                    }
+                )
             }
         },
         confirmButton = {
             Button(onClick = {
-                onAdd(CommuteEntry(day, time, port, direction))
-            }, enabled = timeValid) { Text("Add") }
+                onAdd(
+                    CommuteEntry(
+                        dayOfWeek = day,
+                        departureTime = time,
+                        port = port,
+                        direction = direction,
+                        originLocation = originLocation,
+                        originAddress = originAddress,
+                        destinationLocation = destinationLocation,
+                        destinationAddress = destinationAddress
+                    )
+                )
+            }, enabled = canAdd) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

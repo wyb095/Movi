@@ -5,8 +5,10 @@ import com.group2.movi.data.repository.AuthRepository
 import com.group2.movi.data.repository.ReviewRepository
 import com.group2.movi.data.repository.TaskRepository
 import com.group2.movi.data.repository.UserRepository
+import com.group2.movi.domain.model.CommuteEntry
 import com.group2.movi.testutil.MainDispatcherRule
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -80,6 +82,18 @@ class ProfileViewModelTest {
             "Network error. Please check your connection and try again.",
             viewModel.editProfileState.value.errorMessage
         )
+    }
+
+    @Test
+    fun `remove schedule delegates to repository`() = runTest {
+        val removed = CommuteEntry(dayOfWeek = "TUESDAY", departureTime = "18:00", port = "LO_WU", direction = "HK_TO_SZ")
+        coEvery { userRepo.removeCommuteEntry("uid", removed) } returns Result.success(Unit)
+
+        val viewModel = createViewModel()
+        viewModel.removeSchedule(removed)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { userRepo.removeCommuteEntry("uid", removed) }
     }
 
     private fun createViewModel(): ProfileViewModel {
