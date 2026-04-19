@@ -1,0 +1,9 @@
+# RENAME THIS FILE to local.properties BEFORE building.
+# (local.properties is gitignored so keys don't leak.)
+
+## Android SDK path — Android Studio fills this in automatically.
+# sdk.dir=/Users/<you>/Library/Android/sdk
+
+## Google Maps API key for the maps composable.
+## Get one from https://console.cloud.google.com/ → enable "Maps SDK for Android"
+MAPS_API_KEY=AIzaSyBwvKjuiYfxVcs1PR2iJwRoGggLpyVaU7E
