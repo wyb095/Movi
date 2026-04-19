@@ -2,6 +2,7 @@ package com.group2.movi.domain.model
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.GeoPoint
 
 data class User(
     @DocumentId val userId: String = "",
@@ -23,5 +24,10 @@ data class CommuteEntry(
     val dayOfWeek: String = "", // MONDAY, TUESDAY, ...
     val departureTime: String = "", // "18:00"
     val port: String = "", // FUTIAN, LO_WU, HUANGGANG, LOK_MA_CHAU, HEUNG_YUEN_WAI
-    val direction: String = "" // HK_TO_SZ or SZ_TO_HK
+    val direction: String = "", // HK_TO_SZ or SZ_TO_HK
+    val originLocation: GeoPoint? = null,
+    val originAddress: String = "",
+    val destinationLocation: GeoPoint? = null,
+    val destinationAddress: String = ""
 )
+

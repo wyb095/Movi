@@ -2,10 +2,12 @@ package com.group2.movi.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.data.repository.TaskRepository
 import com.group2.movi.data.repository.UserRepository
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskMatchInsight
+import com.group2.movi.domain.model.commuteCorridor
 import com.group2.movi.domain.model.findBestMatch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,6 +32,7 @@ data class HomeUiState(
     val selectedCategory: String? = null,
     val maxDetourMinutes: Float = 60f,
     val hasCommuteSchedule: Boolean = false,
+    val corridors: List<List<GeoPoint>> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null
 )
@@ -60,6 +63,7 @@ class HomeViewModel @Inject constructor(
             combine(rawTasks, me, maxDetourMinutes) { tasks, user, detour ->
                 val schedule = user?.commuteSchedule.orEmpty()
                 val hasSchedule = schedule.isNotEmpty()
+                val corridors = schedule.map { commuteCorridor(it) }.filter { it.isNotEmpty() }
                 val mapped = tasks.map { task ->
                     DiscoverTask(
                         task = task,
@@ -80,16 +84,15 @@ class HomeViewModel @Inject constructor(
                             .thenByDescending { it.task.createdAt?.seconds ?: 0L }
                     )
                 }
-                Triple(visible, hasSchedule, detour)
-            }.collect { (list, hasSchedule, detour) ->
-                _state.value = HomeUiState(
-                    tasks = list,
+                HomeUiState(
+                    tasks = visible,
                     selectedCategory = selectedCategory.value,
                     maxDetourMinutes = detour,
                     hasCommuteSchedule = hasSchedule,
+                    corridors = corridors,
                     loading = false
                 )
-            }
+            }.collect { newState -> _state.value = newState }
         }
     }
 

@@ -217,32 +217,34 @@ private fun Step1Category(state: PostFormState, vm: PostTaskViewModel) {
 private fun Step2Locations(state: PostFormState, vm: PostTaskViewModel) {
     Text("Where is it going?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     Text(
-        "Enter pickup and drop-off addresses. Paste a Google Maps link or lat,lng to enable map discovery and smarter matching.",
+        "Search pickup and drop-off addresses. Tap the 🔗 button to paste a Google Maps link or lat,lng instead.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    OutlinedTextField(
+    com.group2.movi.ui.components.PlacePickerField(
+        label = "Pickup address",
         value = state.pickupAddress,
-        onValueChange = vm::setPickupAddress,
-        label = { Text("Pickup address") },
+        onPlaceSelected = { addr, loc, placeId -> vm.setPickupPlace(addr, loc, placeId) },
+        onPasteFallback = { raw -> vm.setPickupFromPaste(raw) },
         modifier = Modifier.fillMaxWidth()
     )
     state.pickupLocation?.let {
         Text(
-            "Pickup coordinates detected: %.4f, %.4f".format(it.latitude, it.longitude),
+            "Pickup coordinates: %.4f, %.4f".format(it.latitude, it.longitude),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.primary
         )
     }
-    OutlinedTextField(
+    com.group2.movi.ui.components.PlacePickerField(
+        label = "Drop-off address",
         value = state.dropoffAddress,
-        onValueChange = vm::setDropoffAddress,
-        label = { Text("Drop-off address") },
+        onPlaceSelected = { addr, loc, placeId -> vm.setDropoffPlace(addr, loc, placeId) },
+        onPasteFallback = { raw -> vm.setDropoffFromPaste(raw) },
         modifier = Modifier.fillMaxWidth()
     )
     state.dropoffLocation?.let {
         Text(
-            "Drop-off coordinates detected: %.4f, %.4f".format(it.latitude, it.longitude),
+            "Drop-off coordinates: %.4f, %.4f".format(it.latitude, it.longitude),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.primary
         )

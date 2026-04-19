@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,9 +46,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.domain.model.CommuteEntry
 import com.group2.movi.domain.model.CrossingPort
+import com.group2.movi.domain.model.extractGeoPoint
 import com.group2.movi.ui.components.EmptyState
+import com.group2.movi.ui.components.PlacePickerField
 import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,6 +129,25 @@ private fun ScheduleCard(entry: CommuteEntry, onDelete: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (entry.originLocation != null && entry.destinationLocation != null) {
+                    Spacer(Modifier.height(4.dp))
+                    val from = entry.originAddress.ifBlank {
+                        "%.3f, %.3f".format(entry.originLocation.latitude, entry.originLocation.longitude)
+                    }
+                    val to = entry.destinationAddress.ifBlank {
+                        "%.3f, %.3f".format(entry.destinationLocation.latitude, entry.destinationLocation.longitude)
+                    }
+                    Text(
+                        "From: $from",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1
+                    )
+                    Text(
+                        "To: $to",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1
+                    )
+                }
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
@@ -141,7 +164,12 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onAdd: (CommuteEntry) -> Un
     var time by remember { mutableStateOf("18:00") }
     var port by remember { mutableStateOf(CrossingPort.FUTIAN) }
     var direction by remember { mutableStateOf("SZ_TO_HK") }
+    var originAddress by remember { mutableStateOf("") }
+    var originLocation by remember { mutableStateOf<GeoPoint?>(null) }
+    var destinationAddress by remember { mutableStateOf("") }
+    var destinationLocation by remember { mutableStateOf<GeoPoint?>(null) }
     val timeValid = isValidDepartureTime(time)
+    val locationsValid = originLocation != null && destinationLocation != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -176,12 +204,65 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onAdd: (CommuteEntry) -> Un
                     selected = direction,
                     onSelect = { direction = it }
                 )
+                PlacePickerField(
+                    label = "Origin (home / office)",
+                    value = originAddress,
+                    onPlaceSelected = { addr, loc, _ ->
+                        originAddress = addr
+                        originLocation = loc
+                    },
+                    onPasteFallback = { raw ->
+                        val geo = extractGeoPoint(raw)
+                        if (geo != null) {
+                            originLocation = geo
+                            originAddress = "%.4f, %.4f".format(geo.latitude, geo.longitude)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                PlacePickerField(
+                    label = "Destination (office / home)",
+                    value = destinationAddress,
+                    onPlaceSelected = { addr, loc, _ ->
+                        destinationAddress = addr
+                        destinationLocation = loc
+                    },
+                    onPasteFallback = { raw ->
+                        val geo = extractGeoPoint(raw)
+                        if (geo != null) {
+                            destinationLocation = geo
+                            destinationAddress = "%.4f, %.4f".format(geo.latitude, geo.longitude)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (!locationsValid) {
+                    Text(
+                        "Pick both origin and destination so Movi can match tasks along your route.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = {
-                onAdd(CommuteEntry(day, time, port, direction))
-            }, enabled = timeValid) { Text("Add") }
+            Button(
+                onClick = {
+                    onAdd(
+                        CommuteEntry(
+                            dayOfWeek = day,
+                            departureTime = time,
+                            port = port,
+                            direction = direction,
+                            originLocation = originLocation,
+                            originAddress = originAddress,
+                            destinationLocation = destinationLocation,
+                            destinationAddress = destinationAddress
+                        )
+                    )
+                },
+                enabled = timeValid && locationsValid
+            ) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,12 +43,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
+import com.google.firebase.firestore.GeoPoint
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.firebase.Timestamp
 import com.group2.movi.domain.model.CrossingPort
@@ -106,25 +112,23 @@ fun HomeScreen(
                         "Pull down to refresh or check back soon."
                     }
                 )
-                else -> {
-                    if (mode == DiscoverMode.MAP) {
-                        TaskMap(
-                            tasks = state.tasks,
-                            onTaskClick = onTaskClick
+                mode == DiscoverMode.MAP -> TaskMap(
+                    tasks = state.tasks,
+                    corridors = state.corridors,
+                    onTaskClick = onTaskClick,
+                    modifier = Modifier.fillMaxSize()
+                )
+                else -> LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(state.tasks, key = { it.task.taskId }) { card ->
+                        TaskCard(
+                            task = card.task,
+                            matchReason = card.match?.reason,
+                            detourMinutes = card.match?.detourMinutes,
+                            onClick = { onTaskClick(card.task.taskId) }
                         )
-                    }
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(state.tasks, key = { it.task.taskId }) { card ->
-                            TaskCard(
-                                task = card.task,
-                                matchReason = card.match?.reason,
-                                detourMinutes = card.match?.detourMinutes,
-                                onClick = { onTaskClick(card.task.taskId) }
-                            )
-                        }
                     }
                 }
             }
@@ -190,23 +194,61 @@ private fun DiscoverToolbar(
 @Composable
 private fun TaskMap(
     tasks: List<DiscoverTask>,
-    onTaskClick: (String) -> Unit
+    corridors: List<List<GeoPoint>>,
+    onTaskClick: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val first = tasks.firstOrNull()?.task?.let { taskMarkerPoint(it) }
+    val taskPoints = tasks.map { taskMarkerPoint(it.task) }
+    val corridorPoints = corridors.flatten()
+    val allPoints = taskPoints + corridorPoints
+    val fallbackCenter = LatLng(22.5431, 114.0579)
     val cameraState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(
-            first?.let { LatLng(it.latitude, it.longitude) } ?: LatLng(22.5431, 114.0579),
+            allPoints.firstOrNull()?.let { LatLng(it.latitude, it.longitude) } ?: fallbackCenter,
             10.5f
         )
     }
+
+    LaunchedEffect(allPoints) {
+        if (allPoints.size >= 2) {
+            val bounds = LatLngBounds.Builder().apply {
+                allPoints.forEach { include(LatLng(it.latitude, it.longitude)) }
+            }.build()
+            cameraState.animate(CameraUpdateFactory.newLatLngBounds(bounds, 160))
+        } else if (allPoints.size == 1) {
+            val p = allPoints.first()
+            cameraState.animate(
+                CameraUpdateFactory.newLatLngZoom(LatLng(p.latitude, p.longitude), 12f)
+            )
+        }
+    }
+
     GoogleMap(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(240.dp)
-            .padding(horizontal = 16.dp),
+        modifier = modifier,
         cameraPositionState = cameraState,
         properties = MapProperties(isMyLocationEnabled = false)
     ) {
+        corridors.forEach { corridor ->
+            if (corridor.size >= 2) {
+                Polyline(
+                    points = corridor.map { LatLng(it.latitude, it.longitude) },
+                    color = MoviAccent.copy(alpha = 0.5f),
+                    width = 10f
+                )
+                val origin = corridor.first()
+                val destination = corridor.last()
+                Marker(
+                    state = MarkerState(position = LatLng(origin.latitude, origin.longitude)),
+                    title = "My commute origin",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
+                )
+                Marker(
+                    state = MarkerState(position = LatLng(destination.latitude, destination.longitude)),
+                    title = "My commute destination",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
+                )
+            }
+        }
         tasks.forEach { card ->
             val point = taskMarkerPoint(card.task)
             Marker(

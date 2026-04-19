@@ -67,18 +67,35 @@ class PostTaskViewModel @Inject constructor(
     fun setCategory(c: String) = _state.update { it.copy(category = c) }
     fun setTitle(v: String) = _state.update { it.copy(title = v.take(80)) }
     fun setDescription(v: String) = _state.update { it.copy(description = v.take(500)) }
-    fun setPickupAddress(v: String) = _state.update {
-        it.copy(
-            pickupAddress = v,
-            pickupLocation = extractGeoPoint(v)
-        )
+
+    fun setPickupPlace(address: String, loc: GeoPoint, placeId: String) {
+        _state.update { it.copy(pickupAddress = address, pickupLocation = loc) }
     }
-    fun setDropoffAddress(v: String) = _state.update {
-        it.copy(
-            dropoffAddress = v,
-            dropoffLocation = extractGeoPoint(v)
-        )
+
+    fun setDropoffPlace(address: String, loc: GeoPoint, placeId: String) {
+        _state.update { it.copy(dropoffAddress = address, dropoffLocation = loc) }
     }
+
+    fun setPickupFromPaste(raw: String) {
+        val geo = extractGeoPoint(raw)
+        _state.update {
+            it.copy(
+                pickupAddress = if (geo != null) "%.4f, %.4f".format(geo.latitude, geo.longitude) else raw.trim(),
+                pickupLocation = geo
+            )
+        }
+    }
+
+    fun setDropoffFromPaste(raw: String) {
+        val geo = extractGeoPoint(raw)
+        _state.update {
+            it.copy(
+                dropoffAddress = if (geo != null) "%.4f, %.4f".format(geo.latitude, geo.longitude) else raw.trim(),
+                dropoffLocation = geo
+            )
+        }
+    }
+
     fun setPort(v: String) = _state.update { it.copy(crossingPort = v) }
     fun setDirection(v: String) = _state.update { it.copy(direction = v) }
     fun setDeadline(epochMs: Long) = _state.update { it.copy(deadlineEpochMs = epochMs) }
