@@ -37,9 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
 import com.group2.movi.domain.model.EscrowStatus
 import com.group2.movi.domain.model.TaskStatus
 import com.group2.movi.ui.components.displayablePlace
@@ -93,6 +95,19 @@ fun TaskProgressScreen(
                 Card(shape = RoundedCornerShape(12.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(task.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleLarge)
+                        if (!task.itemPhotoUrl.isNullOrBlank()) {
+                            Spacer(Modifier.size(12.dp))
+                            AsyncImage(
+                                model = task.itemPhotoUrl,
+                                contentDescription = "Item photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                            )
+                        }
                         Spacer(Modifier.size(8.dp))
                         InfoRow("Category", task.category)
                         InfoRow("Pickup", displayablePlace(task.pickupAddress, "—"))
@@ -100,6 +115,11 @@ fun TaskProgressScreen(
                         InfoRow("Price", "HK$ ${task.offeredPrice.toInt()}")
                         InfoRow("Status", task.status)
                         task.carrierName?.let { InfoRow("Carrier", it) }
+                        if (task.description.isNotBlank()) {
+                            Spacer(Modifier.size(8.dp))
+                            Text("Description", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                            Text(task.description, style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
 

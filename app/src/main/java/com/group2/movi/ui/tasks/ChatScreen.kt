@@ -25,7 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -137,7 +137,11 @@ fun ChatScreen(
                     onClick = { pickImage.launch("image/*") },
                     enabled = !composer.sending
                 ) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = "Attach image")
+                    Icon(
+                        Icons.Filled.AddPhotoAlternate,
+                        contentDescription = "Send photo",
+                        tint = if (composer.sending) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                    )
                 }
                 IconButton(
                     onClick = vm::send,
