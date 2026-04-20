@@ -55,17 +55,17 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.firebase.Timestamp
-import com.group2.movi.domain.model.CrossingPort
-import com.group2.movi.domain.model.portCenter
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskCategory
 import com.group2.movi.ui.components.EmptyState
 import com.group2.movi.ui.components.LoadingBox
 import com.group2.movi.ui.components.Pill
+import com.group2.movi.ui.components.displayablePlace
 import com.group2.movi.ui.theme.MoviAccent
 import com.group2.movi.ui.theme.MoviSecondary
 import com.group2.movi.ui.theme.MoviWarning
-import java.util.concurrent.TimeUnit
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 private enum class DiscoverMode { LIST, MAP }
 
@@ -181,7 +181,7 @@ private fun TaskMap(
     onTaskClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val taskPoints = tasks.map { taskMarkerPoint(it.task) }
+    val taskPoints = tasks.mapNotNull { taskMarkerPoint(it.task) }
     val corridorPoints = corridors.flatten()
     val allPoints = taskPoints + corridorPoints
     val fallbackCenter = LatLng(22.5431, 114.0579)
@@ -233,7 +233,7 @@ private fun TaskMap(
             }
         }
         tasks.forEach { card ->
-            val point = taskMarkerPoint(card.task)
+            val point = taskMarkerPoint(card.task) ?: return@forEach
             Marker(
                 state = MarkerState(position = LatLng(point.latitude, point.longitude)),
                 title = card.task.title.ifBlank { "Task" },
@@ -308,7 +308,7 @@ fun TaskCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    shortCity(task.pickupAddress, "Shenzhen"),
+                    displayablePlace(task.pickupAddress, "Shenzhen"),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Icon(
@@ -317,7 +317,7 @@ fun TaskCard(
                     modifier = Modifier.size(14.dp).padding(horizontal = 4.dp)
                 )
                 Text(
-                    shortCity(task.dropoffAddress, "Hong Kong"),
+                    displayablePlace(task.dropoffAddress, "Hong Kong"),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.weight(1f))
@@ -351,13 +351,13 @@ fun TaskCard(
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    timeLeftLabel(task.requiredBefore),
+                    deadlineDateTimeLabel(task.requiredBefore),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "via ${CrossingPort.label(task.crossingPort)}",
+                    if (task.direction == "HK_TO_SZ") "HK → SZ" else "SZ → HK",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -395,7 +395,8 @@ private fun mapSnippet(card: DiscoverTask, hasCommuteSchedule: Boolean): String 
     }
 }
 
-private fun taskMarkerPoint(task: Task): GeoPoint = task.pickupLocation ?: portCenter(task.crossingPort)
+private fun taskMarkerPoint(task: Task): GeoPoint? =
+    task.pickupLocation ?: task.dropoffLocation
 
 internal fun categoryEmoji(category: String): String = when (category) {
     TaskCategory.FOOD -> "🍱"
@@ -405,20 +406,7 @@ internal fun categoryEmoji(category: String): String = when (category) {
     else -> "🧾"
 }
 
-private fun shortCity(address: String, fallback: String): String {
-    if (address.isBlank()) return fallback
-    return address.split(",").firstOrNull()?.trim()?.take(24) ?: fallback
-}
-
-internal fun timeLeftLabel(ts: Timestamp?): String {
-    if (ts == null) return "no deadline"
-    val ms = ts.toDate().time - System.currentTimeMillis()
-    if (ms <= 0) return "expired"
-    val h = TimeUnit.MILLISECONDS.toHours(ms)
-    val m = TimeUnit.MILLISECONDS.toMinutes(ms) % 60
-    return when {
-        h >= 24 -> "${h / 24}d left"
-        h >= 1 -> "${h}h ${m}m left"
-        else -> "${m}m left"
-    }
+internal fun deadlineDateTimeLabel(ts: Timestamp?): String {
+    if (ts == null) return "No deadline"
+    return SimpleDateFormat("M月d号 E HH:mm", Locale.SIMPLIFIED_CHINESE).format(ts.toDate())
 }

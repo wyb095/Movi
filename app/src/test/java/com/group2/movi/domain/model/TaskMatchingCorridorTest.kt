@@ -12,14 +12,13 @@ class TaskMatchingCorridorTest {
 
     private val shenzhenBayOffice = GeoPoint(22.5158, 113.9347)
     private val centralHK = GeoPoint(22.2810, 114.1580)
-    private val huaqiangbei = GeoPoint(22.5430, 114.0850)
-    private val sheungWan = GeoPoint(22.2870, 114.1500)
-    private val kwunTong = GeoPoint(22.3120, 114.2260)
-    private val yuenLong = GeoPoint(22.4450, 114.0350)
+    private val nearCorridorStart = GeoPoint(22.5000, 113.9500)
+    private val nearCorridorEnd = GeoPoint(22.2950, 114.1650)
+    private val farNorthEast = GeoPoint(22.6500, 114.3000)
+    private val farNorthWest = GeoPoint(22.6400, 113.7800)
 
     private val futianCommute = CommuteEntry(
         daysOfWeek = listOf("MONDAY"),
-        port = CrossingPort.FUTIAN,
         direction = "SZ_TO_HK",
         originLocation = shenzhenBayOffice,
         originAddress = "Shenzhen Bay Office",
@@ -37,7 +36,7 @@ class TaskMatchingCorridorTest {
     private fun task(
         pickup: GeoPoint,
         dropoff: GeoPoint,
-        port: String = CrossingPort.FUTIAN,
+        crossingPort: String = "",
         direction: String = "SZ_TO_HK"
     ): Task = Task(
         taskId = "t1",
@@ -46,7 +45,7 @@ class TaskMatchingCorridorTest {
         pickupAddress = "",
         dropoffLocation = dropoff,
         dropoffAddress = "",
-        crossingPort = port,
+        crossingPort = crossingPort,
         direction = direction
     )
 
@@ -73,53 +72,65 @@ class TaskMatchingCorridorTest {
     }
 
     @Test
-    fun `corridor yields three points when commute is complete`() {
+    fun `corridor yields two points when commute is complete`() {
         val corridor = commuteCorridor(futianCommute)
-        assertEquals(3, corridor.size)
+        assertEquals(2, corridor.size)
         assertEquals(shenzhenBayOffice, corridor[0])
-        assertEquals(centralHK, corridor[2])
+        assertEquals(centralHK, corridor[1])
     }
 
     @Test
     fun `corridorDeviationKm returns null for legacy commutes`() {
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
+        val t = task(pickup = shenzhenBayOffice, dropoff = centralHK)
         assertNull(corridorDeviationKm(t, legacyCommute))
     }
 
     @Test
     fun `corridorDeviationKm is small for tasks on the corridor`() {
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
+        val t = task(pickup = shenzhenBayOffice, dropoff = centralHK)
         val dev = corridorDeviationKm(t, futianCommute)
         assertNotNull(dev)
-        assertTrue("expected < 5km, got $dev", dev!! < 5.0)
+        assertTrue("expected < 1km, got $dev", dev!! < 1.0)
     }
 
     @Test
     fun `routeOverlapPercent is low for far routes`() {
-        val t = task(pickup = kwunTong, dropoff = yuenLong)
+        val t = task(pickup = farNorthEast, dropoff = farNorthWest)
         val percent = routeOverlapPercent(t, futianCommute)
         assertNotNull(percent)
-        assertTrue("expected below threshold, got $percent", percent!! in 1 until HIGH_ROUTE_MATCH_PERCENT)
+        assertTrue("expected below threshold, got $percent", percent!! in 0 until HIGH_ROUTE_MATCH_PERCENT)
+    }
+
+    @Test
+    fun `matchPercentForDeviationKm uses the MVP breakpoint curve`() {
+        assertEquals(100, matchPercentForDeviationKm(0.0))
+        assertEquals(100, matchPercentForDeviationKm(3.0))
+        assertEquals(90, matchPercentForDeviationKm(5.0))
+        assertEquals(75, matchPercentForDeviationKm(8.0))
+        assertEquals(60, matchPercentForDeviationKm(12.0))
+        assertEquals(0, matchPercentForDeviationKm(20.0))
+        assertEquals(0, matchPercentForDeviationKm(24.0))
     }
 
     @Test
     fun `findBestMatch returns high route match percent for corridor task`() {
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
+        val t = task(pickup = shenzhenBayOffice, dropoff = centralHK)
 
         val match = findBestMatch(t, listOf(futianCommute))
         assertNotNull("corridor task should match", match)
         assertTrue(match!!.corridorMatch)
         assertTrue(match.matchPercent >= HIGH_ROUTE_MATCH_PERCENT)
-        assertTrue(match.reason.contains("route match"))
+        assertTrue(match.reason == "Right on your route" || match.reason.contains("off your route"))
+        assertEquals(0.0, match.routeOffsetKm, 0.1)
         assertEquals("Mon", match.scheduleSummary)
     }
 
     @Test
     fun `findBestMatch can still match near routes across a different port`() {
         val t = task(
-            pickup = huaqiangbei,
-            dropoff = sheungWan,
-            port = CrossingPort.LO_WU
+            pickup = nearCorridorStart,
+            dropoff = nearCorridorEnd,
+            crossingPort = CrossingPort.LO_WU
         )
 
         val match = findBestMatch(t, listOf(futianCommute))
@@ -130,8 +141,8 @@ class TaskMatchingCorridorTest {
     @Test
     fun `findBestMatch rejects opposite direction`() {
         val t = task(
-            pickup = huaqiangbei,
-            dropoff = sheungWan,
+            pickup = shenzhenBayOffice,
+            dropoff = centralHK,
             direction = "HK_TO_SZ"
         )
 
@@ -140,7 +151,7 @@ class TaskMatchingCorridorTest {
 
     @Test
     fun `legacy commute without corridor does not produce route overlap`() {
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
+        val t = task(pickup = shenzhenBayOffice, dropoff = centralHK)
 
         val match = findBestMatch(t, listOf(legacyCommute))
         assertNull(match)

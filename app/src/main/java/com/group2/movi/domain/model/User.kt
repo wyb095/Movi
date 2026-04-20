@@ -24,7 +24,7 @@ data class CommuteEntry(
     val daysOfWeek: List<String> = emptyList(), // MONDAY..SUNDAY
     val dayOfWeek: String = "", // MONDAY, TUESDAY, ...
     val departureTime: String = "", // "18:00"
-    val port: String = "", // FUTIAN, LO_WU, HUANGGANG, LOK_MA_CHAU, HEUNG_YUEN_WAI
+    val port: String = "", // legacy Firestore compatibility placeholder
     val direction: String = "", // HK_TO_SZ or SZ_TO_HK
     val originLocation: GeoPoint? = null,
     val originAddress: String = "",

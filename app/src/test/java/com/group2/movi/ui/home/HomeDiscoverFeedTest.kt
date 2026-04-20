@@ -3,7 +3,6 @@ package com.group2.movi.ui.home
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.domain.model.CommuteEntry
-import com.group2.movi.domain.model.CrossingPort
 import com.group2.movi.domain.model.HIGH_ROUTE_MATCH_PERCENT
 import com.group2.movi.domain.model.Task
 import org.junit.Assert.assertEquals
@@ -17,7 +16,6 @@ class HomeDiscoverFeedTest {
 
     private val routeCommute = CommuteEntry(
         daysOfWeek = listOf("MONDAY", "WEDNESDAY", "FRIDAY"),
-        port = CrossingPort.FUTIAN,
         direction = "SZ_TO_HK",
         originLocation = GeoPoint(22.5158, 113.9347),
         originAddress = "Shenzhen Bay Office",
@@ -28,22 +26,20 @@ class HomeDiscoverFeedTest {
     private val legacyCommute = CommuteEntry(
         dayOfWeek = "MONDAY",
         departureTime = "18:00",
-        port = CrossingPort.FUTIAN,
         direction = "SZ_TO_HK"
     )
 
-    private val huaqiangbei = GeoPoint(22.5430, 114.0850)
-    private val nearCentral = GeoPoint(22.2870, 114.1500)
-    private val slightlyOffShenzhen = GeoPoint(22.5280, 114.1020)
-    private val slightlyOffHongKong = GeoPoint(22.3000, 114.1820)
-    private val kwunTong = GeoPoint(22.3120, 114.2260)
-    private val yuenLong = GeoPoint(22.4450, 114.0350)
+    private val exactOrigin = GeoPoint(22.5158, 113.9347)
+    private val exactDestination = GeoPoint(22.2810, 114.1580)
+    private val slightlyOffShenzhen = GeoPoint(22.5000, 113.9500)
+    private val slightlyOffHongKong = GeoPoint(22.2950, 114.1650)
+    private val farNorthEast = GeoPoint(22.6500, 114.3000)
+    private val farNorthWest = GeoPoint(22.6400, 113.7800)
 
     private fun task(
         id: String,
         requesterId: String,
         createdAtSeconds: Long,
-        port: String = CrossingPort.FUTIAN,
         direction: String = "SZ_TO_HK",
         isUrgent: Boolean = false,
         pickupLocation: GeoPoint? = null,
@@ -52,7 +48,6 @@ class HomeDiscoverFeedTest {
         taskId = id,
         requesterId = requesterId,
         title = id,
-        crossingPort = port,
         direction = direction,
         isUrgent = isUrgent,
         pickupLocation = pickupLocation,
@@ -66,8 +61,8 @@ class HomeDiscoverFeedTest {
             id = "matched-top",
             requesterId = "other-a",
             createdAtSeconds = 100,
-            pickupLocation = huaqiangbei,
-            dropoffLocation = nearCentral
+            pickupLocation = exactOrigin,
+            dropoffLocation = exactDestination
         )
         val matchedLower = task(
             id = "matched-lower",
@@ -80,16 +75,16 @@ class HomeDiscoverFeedTest {
             id = "unmatched",
             requesterId = "other-c",
             createdAtSeconds = 300,
-            pickupLocation = kwunTong,
-            dropoffLocation = yuenLong
+            pickupLocation = farNorthEast,
+            dropoffLocation = farNorthWest
         )
         val own = task(
             id = "own-task",
             requesterId = "me",
             createdAtSeconds = 400,
             isUrgent = true,
-            pickupLocation = huaqiangbei,
-            dropoffLocation = nearCentral
+            pickupLocation = exactOrigin,
+            dropoffLocation = exactDestination
         )
 
         val feed = buildDiscoverFeed(
@@ -98,10 +93,10 @@ class HomeDiscoverFeedTest {
             schedule = listOf(routeCommute)
         )
 
-        assertEquals(
-            listOf("matched-top", "matched-lower", "unmatched", "own-task"),
-            feed.map { it.task.taskId }
-        )
+        assertEquals(4, feed.size)
+        assertEquals(setOf("matched-top", "matched-lower"), feed.take(2).map { it.task.taskId }.toSet())
+        assertEquals("unmatched", feed[2].task.taskId)
+        assertEquals("own-task", feed[3].task.taskId)
         assertEquals(
             listOf(
                 DiscoverMatchState.MATCHED,
@@ -121,15 +116,15 @@ class HomeDiscoverFeedTest {
             id = "close-task",
             requesterId = "other-a",
             createdAtSeconds = 100,
-            pickupLocation = huaqiangbei,
-            dropoffLocation = nearCentral
+            pickupLocation = exactOrigin,
+            dropoffLocation = exactDestination
         )
         val lowOverlapTask = task(
             id = "low-overlap",
             requesterId = "other-b",
             createdAtSeconds = 200,
-            pickupLocation = kwunTong,
-            dropoffLocation = yuenLong
+            pickupLocation = farNorthEast,
+            dropoffLocation = farNorthWest
         )
 
         val feed = buildDiscoverFeed(
@@ -152,8 +147,8 @@ class HomeDiscoverFeedTest {
             requesterId = "other-a",
             createdAtSeconds = 100,
             isUrgent = true,
-            pickupLocation = huaqiangbei,
-            dropoffLocation = nearCentral
+            pickupLocation = exactOrigin,
+            dropoffLocation = exactDestination
         )
         val otherRecent = task(
             id = "other-recent",
@@ -167,8 +162,8 @@ class HomeDiscoverFeedTest {
             requesterId = "me",
             createdAtSeconds = 300,
             isUrgent = true,
-            pickupLocation = huaqiangbei,
-            dropoffLocation = nearCentral
+            pickupLocation = exactOrigin,
+            dropoffLocation = exactDestination
         )
 
         val feed = buildDiscoverFeed(

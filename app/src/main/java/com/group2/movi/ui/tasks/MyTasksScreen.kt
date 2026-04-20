@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.group2.movi.domain.model.HIGH_ROUTE_MATCH_PERCENT
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskStatus
 import com.group2.movi.ui.components.EmptyState
@@ -115,8 +116,8 @@ private fun MyTaskRow(task: Task, matchCount: Int?, onClick: () -> Unit) {
                 if (task.status == TaskStatus.OPEN && matchCount != null) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        if (matchCount > 0) "$matchCount carriers with 60%+ route overlap"
-                        else "No carriers above the 60% route-overlap threshold yet",
+                        if (matchCount > 0) "$matchCount carriers with $HIGH_ROUTE_MATCH_PERCENT%+ route match"
+                        else "No carriers above the $HIGH_ROUTE_MATCH_PERCENT% route-match threshold yet",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (matchCount > 0) MoviAccent else MaterialTheme.colorScheme.onSurfaceVariant
                     )

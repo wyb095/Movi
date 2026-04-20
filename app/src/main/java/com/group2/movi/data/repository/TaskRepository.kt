@@ -101,6 +101,10 @@ class TaskRepository @Inject constructor(
         val ref = storage.reference.child("task_photos/${UUID.randomUUID()}.jpg")
         ref.putFile(uri).await()
         ref.downloadUrl.await().toString()
+    }.onSuccess { url ->
+        Log.i("TaskRepository", "Uploaded task photo url=$url")
+    }.onFailure { error ->
+        Log.e("TaskRepository", "Failed to upload task photo from uri=$uri", error)
     }
 
     suspend fun postTask(task: Task): Result<String> = runCatching {

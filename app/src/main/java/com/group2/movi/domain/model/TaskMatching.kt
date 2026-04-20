@@ -1,6 +1,7 @@
 package com.group2.movi.domain.model
 
 import com.google.firebase.firestore.GeoPoint
+import java.util.Locale
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -10,27 +11,15 @@ import kotlin.math.sqrt
 data class TaskMatchInsight(
     val score: Double,
     val matchPercent: Int,
+    val routeOffsetKm: Double,
     val scheduleSummary: String,
     val reason: String,
     val corridorMatch: Boolean = false
 )
 
-const val HIGH_ROUTE_MATCH_PERCENT = 60
-private const val MAX_ROUTE_DEVIATION_KM = 10.0
-private const val DEFAULT_SPEED_KMH = 24.0
-private const val SERVICE_BUFFER_MINUTES = 10
+const val HIGH_ROUTE_MATCH_PERCENT = 75
 private val GEO_REGEX = Regex("""(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)""")
 private val MAPS_REGEX = Regex("""@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)""")
-
-private val portCenters = mapOf(
-    CrossingPort.FUTIAN to GeoPoint(22.5154, 114.0638),
-    CrossingPort.LO_WU to GeoPoint(22.5289, 114.1133),
-    CrossingPort.HUANGGANG to GeoPoint(22.5201, 114.0450),
-    CrossingPort.LOK_MA_CHAU to GeoPoint(22.5089, 114.0731),
-    CrossingPort.HEUNG_YUEN_WAI to GeoPoint(22.5486, 114.1688)
-)
-
-fun portCenter(port: String): GeoPoint = portCenters[port] ?: portCenters.getValue(CrossingPort.FUTIAN)
 
 fun extractGeoPoint(raw: String): GeoPoint? {
     val input = raw.trim()
@@ -64,19 +53,11 @@ fun extractGeoPoint(raw: String): GeoPoint? {
     return null
 }
 
-fun estimateDetourMinutes(task: Task): Int {
-    val origin = task.pickupLocation ?: portCenter(task.crossingPort)
-    val destination = task.dropoffLocation ?: portCenter(task.crossingPort)
-    val port = portCenter(task.crossingPort)
-    val totalKm = haversineKm(origin, port) + haversineKm(destination, port)
-    return ((totalKm / DEFAULT_SPEED_KMH) * 60.0 + SERVICE_BUFFER_MINUTES).roundToInt().coerceAtLeast(8)
-}
-
-/** Carrier's commute path: origin → port → destination. Empty if either end is missing. */
+/** Carrier's commute path: a straight segment from origin to destination. Empty if either end is missing. */
 internal fun commuteCorridor(entry: CommuteEntry): List<GeoPoint> {
     val origin = entry.originLocation ?: return emptyList()
     val destination = entry.destinationLocation ?: return emptyList()
-    return listOf(origin, portCenter(entry.port), destination)
+    return listOf(origin, destination)
 }
 
 /** Sum of pickup + dropoff nearest-point distances to the carrier's corridor. Null if corridor incomplete or task has no coords. */
@@ -91,33 +72,46 @@ internal fun corridorDeviationKm(task: Task, entry: CommuteEntry): Double? {
     return pickupDev + dropoffDev
 }
 
-/** Detour estimate based on the real corridor. Null when carrier has no origin/destination yet. */
-fun estimateCorridorDetourMinutes(task: Task, entry: CommuteEntry): Int? {
-    val dev = corridorDeviationKm(task, entry) ?: return null
-    return ((dev * 2 / DEFAULT_SPEED_KMH) * 60.0 + SERVICE_BUFFER_MINUTES)
-        .roundToInt()
-        .coerceAtLeast(SERVICE_BUFFER_MINUTES)
-}
-
 internal fun taskRoutePoints(task: Task): List<GeoPoint> {
     val pickup = task.pickupLocation ?: return emptyList()
     val dropoff = task.dropoffLocation ?: return emptyList()
-    return listOf(pickup, portCenter(task.crossingPort), dropoff)
+    return listOf(pickup, dropoff)
 }
 
 internal fun routeOverlapPercent(task: Task, entry: CommuteEntry): Int? {
+    val averageDeviationKm = averageRouteDeviationKm(task, entry) ?: return null
+    return matchPercentForDeviationKm(averageDeviationKm)
+}
+
+internal fun averageRouteDeviationKm(task: Task, entry: CommuteEntry): Double? {
     val corridor = commuteCorridor(entry)
     if (corridor.size < 2) return null
     val routePoints = taskRoutePoints(task)
     if (routePoints.isEmpty()) return null
     val segments = corridor.zipWithNext()
-    val averageDeviationKm = routePoints
+    return routePoints
         .map { point -> segments.minOf { (a, b) -> pointToSegmentKm(point, a, b) } }
         .average()
-    val percent = ((1.0 - averageDeviationKm / MAX_ROUTE_DEVIATION_KM) * 100.0)
+}
+
+internal fun matchPercentForDeviationKm(deviationKm: Double): Int {
+    if (deviationKm <= 3.0) return 100
+    if (deviationKm >= 20.0) return 0
+    val breakpoints = listOf(
+        3.0 to 100.0,
+        5.0 to 90.0,
+        8.0 to 75.0,
+        12.0 to 60.0,
+        20.0 to 35.0
+    )
+    val segment = breakpoints.zipWithNext().firstOrNull { (start, end) ->
+        deviationKm in start.first..end.first
+    } ?: return 0
+    val (start, end) = segment
+    val progress = (deviationKm - start.first) / (end.first - start.first)
+    return (start.second + (end.second - start.second) * progress)
         .roundToInt()
         .coerceIn(0, 100)
-    return percent.takeIf { it > 0 }
 }
 
 fun findBestMatch(
@@ -140,15 +134,17 @@ fun countMatchingCarriers(
 
 private fun computeMatch(task: Task, entry: CommuteEntry): TaskMatchInsight? {
     if (entry.direction != task.direction) return null
-    val matchPercent = routeOverlapPercent(task, entry) ?: return null
-    val reason = if (matchPercent >= HIGH_ROUTE_MATCH_PERCENT) {
-        "$matchPercent% route match with your commute"
+    val routeOffsetKm = averageRouteDeviationKm(task, entry) ?: return null
+    val matchPercent = matchPercentForDeviationKm(routeOffsetKm)
+    val reason = if (routeOffsetKm < 0.2) {
+        "Right on your route"
     } else {
-        "$matchPercent% route overlap with your commute"
+        String.format(Locale.US, "About %.1f km off your route", routeOffsetKm)
     }
     return TaskMatchInsight(
         score = matchPercent / 100.0,
         matchPercent = matchPercent,
+        routeOffsetKm = routeOffsetKm,
         scheduleSummary = entry.scheduleDaySummary(),
         reason = reason,
         corridorMatch = matchPercent >= HIGH_ROUTE_MATCH_PERCENT

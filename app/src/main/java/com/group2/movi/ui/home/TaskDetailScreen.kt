@@ -48,9 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.group2.movi.domain.model.CrossingPort
 import com.group2.movi.domain.model.EscrowStatus
+import com.group2.movi.domain.model.HIGH_ROUTE_MATCH_PERCENT
 import com.group2.movi.domain.model.TaskStatus
+import com.group2.movi.ui.components.displayablePlace
 import com.group2.movi.ui.components.InfoRow
 import com.group2.movi.ui.components.LoadingBox
 import com.group2.movi.ui.components.Pill
@@ -151,11 +152,10 @@ fun TaskDetailScreen(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Logistics", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.size(8.dp))
-                        InfoRow("Pickup", task.pickupAddress.ifBlank { "—" })
-                        InfoRow("Drop-off", task.dropoffAddress.ifBlank { "—" })
-                        InfoRow("Port", CrossingPort.label(task.crossingPort))
+                        InfoRow("Pickup", displayablePlace(task.pickupAddress, "—"))
+                        InfoRow("Drop-off", displayablePlace(task.dropoffAddress, "—"))
                         InfoRow("Direction", if (task.direction == "HK_TO_SZ") "HK → Shenzhen" else "Shenzhen → HK")
-                        InfoRow("Deadline", timeLeftLabel(task.requiredBefore))
+                        InfoRow("Deadline", deadlineDateTimeLabel(task.requiredBefore))
                     }
                 }
 
@@ -177,9 +177,9 @@ fun TaskDetailScreen(
                             vm.isRequester -> {
                                 Text(
                                     if (state.matchingCarrierCount > 0) {
-                                        "${state.matchingCarrierCount} carriers currently have at least 60% route overlap for this task."
+                                        "${state.matchingCarrierCount} carriers currently have at least $HIGH_ROUTE_MATCH_PERCENT% route match for this task."
                                     } else {
-                                        "No carrier has reached the 60% route-overlap threshold yet."
+                                        "No carrier has reached the $HIGH_ROUTE_MATCH_PERCENT% route-match threshold yet."
                                     },
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -199,7 +199,7 @@ fun TaskDetailScreen(
                             }
                             state.hasCommuteRoute -> {
                                 Text(
-                                    "This task is currently below the 60% overlap threshold for your saved commute routes.",
+                                    "This task is currently below the $HIGH_ROUTE_MATCH_PERCENT% strong-match threshold for your saved commute routes.",
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }

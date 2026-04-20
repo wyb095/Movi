@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.domain.model.CommuteEntry
-import com.group2.movi.domain.model.CrossingPort
 import com.group2.movi.domain.model.ORDERED_DAYS_OF_WEEK
 import com.group2.movi.domain.model.WEEKEND_DAYS
 import com.group2.movi.domain.model.WORKDAY_DAYS
@@ -58,6 +57,7 @@ import com.group2.movi.domain.model.extractGeoPoint
 import com.group2.movi.domain.model.normalizeDaysOfWeek
 import com.group2.movi.domain.model.scheduleDaySummary
 import com.group2.movi.domain.model.shortDayLabel
+import com.group2.movi.ui.components.displayablePlace
 import com.group2.movi.ui.components.EmptyState
 import com.group2.movi.ui.components.PlacePickerField
 
@@ -135,25 +135,25 @@ private fun ScheduleCard(entry: CommuteEntry, onDelete: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(entry.scheduleDaySummary(), fontWeight = FontWeight.SemiBold)
                 Text(
-                    "${CrossingPort.label(entry.port)} · ${if (entry.direction == "HK_TO_SZ") "HK → SZ" else "SZ → HK"}",
+                    if (entry.direction == "HK_TO_SZ") "HK → Shenzhen" else "Shenzhen → HK",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (entry.originLocation != null && entry.destinationLocation != null) {
                     Spacer(Modifier.height(4.dp))
-                    val from = entry.originAddress.ifBlank {
+                    val fromFallback = entry.originAddress.ifBlank {
                         "%.3f, %.3f".format(entry.originLocation.latitude, entry.originLocation.longitude)
                     }
-                    val to = entry.destinationAddress.ifBlank {
+                    val toFallback = entry.destinationAddress.ifBlank {
                         "%.3f, %.3f".format(entry.destinationLocation.latitude, entry.destinationLocation.longitude)
                     }
                     Text(
-                        "From: $from",
+                        "From: ${displayablePlace(entry.originAddress, fromFallback)}",
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1
                     )
                     Text(
-                        "To: $to",
+                        "To: ${displayablePlace(entry.destinationAddress, toFallback)}",
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1
                     )
@@ -170,7 +170,6 @@ private fun ScheduleCard(entry: CommuteEntry, onDelete: () -> Unit) {
 @Composable
 private fun AddScheduleDialog(onDismiss: () -> Unit, onAdd: (CommuteEntry) -> Unit) {
     var selectedDays by remember { mutableStateOf(WORKDAY_DAYS) }
-    var port by remember { mutableStateOf(CrossingPort.FUTIAN) }
     var direction by remember { mutableStateOf("SZ_TO_HK") }
     var originAddress by remember { mutableStateOf("") }
     var originLocation by remember { mutableStateOf<GeoPoint?>(null) }
@@ -223,13 +222,6 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onAdd: (CommuteEntry) -> Un
                         color = MaterialTheme.colorScheme.error
                     )
                 }
-                DropdownPicker(
-                    label = "Port",
-                    options = CrossingPort.ALL,
-                    displayOf = { CrossingPort.label(it) },
-                    selected = port,
-                    onSelect = { port = it }
-                )
                 DropdownPicker(
                     label = "Direction",
                     options = listOf("HK_TO_SZ", "SZ_TO_HK"),
@@ -284,7 +276,6 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onAdd: (CommuteEntry) -> Un
                     onAdd(
                         CommuteEntry(
                             daysOfWeek = selectedDays,
-                            port = port,
                             direction = direction,
                             originLocation = originLocation,
                             originAddress = originAddress,

@@ -7,7 +7,6 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.data.repository.TaskRepository
 import com.group2.movi.data.repository.UserRepository
-import com.group2.movi.domain.model.CrossingPort
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskCategory
 import com.group2.movi.domain.model.extractGeoPoint
@@ -27,11 +26,11 @@ data class PostFormState(
     val localPhotoUri: Uri? = null,
     val uploadedPhotoUrl: String? = null,
     val uploadingPhoto: Boolean = false,
+    val photoUploadError: String? = null,
     val pickupAddress: String = "",
     val pickupLocation: GeoPoint? = null,
     val dropoffAddress: String = "",
     val dropoffLocation: GeoPoint? = null,
-    val crossingPort: String = CrossingPort.FUTIAN,
     val direction: String = "SZ_TO_HK",
     val deadlineEpochMs: Long? = null,
     val isUrgent: Boolean = false,
@@ -41,11 +40,20 @@ data class PostFormState(
     val submitError: String? = null,
     val submitted: Boolean = false
 ) {
+    val hasSelectedPhoto: Boolean
+        get() = localPhotoUri != null
+
+    val hasUploadedPhoto: Boolean
+        get() = !uploadedPhotoUrl.isNullOrBlank()
+
+    val photoReadyForSubmit: Boolean
+        get() = !hasSelectedPhoto || hasUploadedPhoto
+
     val stepValid: Boolean
         get() = when (step) {
             0 -> title.trim().length in 5..80 && description.trim().length <= 500 && category.isNotBlank()
             1 -> pickupAddress.trim().isNotBlank() && dropoffAddress.trim().isNotBlank()
-            2 -> crossingPort.isNotBlank() && direction.isNotBlank() && deadlineEpochMs != null
+            2 -> direction.isNotBlank() && deadlineEpochMs != null
                     && deadlineEpochMs > System.currentTimeMillis() + 2 * 60 * 60 * 1000L
             3 -> {
                 val price = priceHkd.toDoubleOrNull()
@@ -96,7 +104,6 @@ class PostTaskViewModel @Inject constructor(
         }
     }
 
-    fun setPort(v: String) = _state.update { it.copy(crossingPort = v) }
     fun setDirection(v: String) = _state.update { it.copy(direction = v) }
     fun setDeadline(epochMs: Long) = _state.update { it.copy(deadlineEpochMs = epochMs) }
     fun setUrgent(v: Boolean) = _state.update { it.copy(isUrgent = v) }
@@ -113,18 +120,34 @@ class PostTaskViewModel @Inject constructor(
     }
 
     fun selectPhoto(uri: Uri?) {
-        _state.update { it.copy(localPhotoUri = uri) }
+        _state.update {
+            it.copy(
+                localPhotoUri = uri,
+                uploadedPhotoUrl = null,
+                uploadingPhoto = false,
+                photoUploadError = null,
+                submitError = null
+            )
+        }
         if (uri != null) uploadPhoto(uri)
     }
 
     private fun uploadPhoto(uri: Uri) {
-        _state.update { it.copy(uploadingPhoto = true) }
+        _state.update {
+            it.copy(
+                uploadingPhoto = true,
+                uploadedPhotoUrl = null,
+                photoUploadError = null,
+                submitError = null
+            )
+        }
         viewModelScope.launch {
             val res = taskRepo.uploadItemPhoto(uri)
             _state.update {
                 it.copy(
                     uploadingPhoto = false,
-                    uploadedPhotoUrl = res.getOrNull()
+                    uploadedPhotoUrl = res.getOrNull(),
+                    photoUploadError = res.exceptionOrNull()?.let(::friendlyPhotoUploadError)
                 )
             }
         }
@@ -135,6 +158,15 @@ class PostTaskViewModel @Inject constructor(
         if (!s.stepValid) return
         if (s.uploadingPhoto) {
             _state.update { it.copy(submitError = "Please wait for the photo upload to finish.") }
+            return
+        }
+        if (!s.photoReadyForSubmit) {
+            _state.update {
+                it.copy(
+                    submitError = it.photoUploadError
+                        ?: "The selected photo was not uploaded. Please try choosing the photo again."
+                )
+            }
             return
         }
         val uid = userRepo.currentUid ?: run {
@@ -156,7 +188,6 @@ class PostTaskViewModel @Inject constructor(
                 pickupAddress = s.pickupAddress.trim(),
                 dropoffLocation = s.dropoffLocation,
                 dropoffAddress = s.dropoffAddress.trim(),
-                crossingPort = s.crossingPort,
                 direction = s.direction,
                 requiredBefore = s.deadlineEpochMs?.let { Timestamp(java.util.Date(it)) },
                 offeredPrice = s.priceHkd.toDoubleOrNull() ?: 0.0,
@@ -169,6 +200,17 @@ class PostTaskViewModel @Inject constructor(
                 if (res.isSuccess) it.copy(submitting = false, submitted = true)
                 else it.copy(submitting = false, submitError = res.exceptionOrNull()?.message ?: "Failed to post task")
             }
+        }
+    }
+
+    private fun friendlyPhotoUploadError(error: Throwable): String {
+        val message = error.message.orEmpty()
+        return when {
+            message.contains("permission", ignoreCase = true) ->
+                "Photo upload was blocked by Firebase Storage permissions."
+            message.contains("network", ignoreCase = true) ->
+                "Photo upload failed because of a network problem."
+            else -> "Photo upload failed. Please try selecting the image again."
         }
     }
 }

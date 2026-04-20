@@ -20,7 +20,7 @@ data class Task(
     val pickupAddress: String = "",
     val dropoffLocation: GeoPoint? = null,
     val dropoffAddress: String = "",
-    val crossingPort: String = CrossingPort.FUTIAN,
+    val crossingPort: String = "", // legacy Firestore compatibility placeholder
     val direction: String = "SZ_TO_HK", // HK_TO_SZ or SZ_TO_HK
     val requiredBefore: Timestamp? = null,
     val offeredPrice: Double = 0.0,

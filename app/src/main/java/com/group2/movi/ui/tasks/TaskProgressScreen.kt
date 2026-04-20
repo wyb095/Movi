@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.group2.movi.domain.model.EscrowStatus
 import com.group2.movi.domain.model.TaskStatus
+import com.group2.movi.ui.components.displayablePlace
 import com.group2.movi.ui.components.InfoRow
 import com.group2.movi.ui.components.LoadingBox
 import com.group2.movi.ui.theme.MoviAccent
@@ -94,8 +95,8 @@ fun TaskProgressScreen(
                         Text(task.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.size(8.dp))
                         InfoRow("Category", task.category)
-                        InfoRow("Pickup", task.pickupAddress.ifBlank { "—" })
-                        InfoRow("Drop-off", task.dropoffAddress.ifBlank { "—" })
+                        InfoRow("Pickup", displayablePlace(task.pickupAddress, "—"))
+                        InfoRow("Drop-off", displayablePlace(task.dropoffAddress, "—"))
                         InfoRow("Price", "HK$ ${task.offeredPrice.toInt()}")
                         InfoRow("Status", task.status)
                         task.carrierName?.let { InfoRow("Carrier", it) }

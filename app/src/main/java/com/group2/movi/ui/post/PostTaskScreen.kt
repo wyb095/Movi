@@ -60,8 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.group2.movi.domain.model.CrossingPort
 import com.group2.movi.domain.model.TaskCategory
+import com.group2.movi.ui.components.displayablePlace
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -97,7 +97,7 @@ fun PostTaskScreen(
             when (state.step) {
                 0 -> Step1Category(state, vm)
                 1 -> Step2Locations(state, vm)
-                2 -> Step3PortTiming(state, vm)
+                2 -> Step3Timing(state, vm)
                 3 -> Step4PriceReview(state, vm)
             }
 
@@ -116,7 +116,10 @@ fun PostTaskScreen(
                 }
                 Button(
                     onClick = { if (state.step == 3) vm.submit() else vm.next() },
-                    enabled = state.stepValid && !state.submitting && !state.uploadingPhoto,
+                    enabled = state.stepValid
+                        && !state.submitting
+                        && !state.uploadingPhoto
+                        && state.photoReadyForSubmit,
                     modifier = Modifier.weight(1f).height(52.dp)
                 ) {
                     if (state.submitting) CircularProgressIndicator(modifier = Modifier.height(20.dp))
@@ -211,6 +214,24 @@ private fun Step1Category(state: PostFormState, vm: PostTaskViewModel) {
             }
         }
     }
+
+    when {
+        state.uploadingPhoto -> Text(
+            "Uploading photo...",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        state.hasUploadedPhoto -> Text(
+            "Photo uploaded. It will appear in Task Details after posting.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        state.photoUploadError != null -> Text(
+            state.photoUploadError,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
 }
 
 @Composable
@@ -252,21 +273,9 @@ private fun Step2Locations(state: PostFormState, vm: PostTaskViewModel) {
 }
 
 @Composable
-private fun Step3PortTiming(state: PostFormState, vm: PostTaskViewModel) {
-    Text("Crossing port & deadline", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+private fun Step3Timing(state: PostFormState, vm: PostTaskViewModel) {
+    Text("Direction & deadline", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-    Text("Port", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        CrossingPort.ALL.forEach { port ->
-            PortRow(
-                label = CrossingPort.label(port),
-                selected = state.crossingPort == port,
-                onClick = { vm.setPort(port) }
-            )
-        }
-    }
-
-    Spacer(Modifier.size(4.dp))
     Text("Direction", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(
@@ -298,26 +307,6 @@ private fun Step3PortTiming(state: PostFormState, vm: PostTaskViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
-}
-
-@Composable
-private fun PortRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                shape = RoundedCornerShape(8.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, modifier = Modifier.weight(1f))
-        if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -369,18 +358,24 @@ private fun Step4PriceReview(state: PostFormState, vm: PostTaskViewModel) {
             Text("Summary", fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(8.dp))
             Text("• ${state.category}: ${state.title}")
-            Text("• From: ${state.pickupAddress}")
-            Text("• To: ${state.dropoffAddress}")
+            Text("• From: ${displayablePlace(state.pickupAddress, "Pickup location")}")
+            Text("• To: ${displayablePlace(state.dropoffAddress, "Drop-off location")}")
             if (state.pickupLocation != null && state.dropoffLocation != null) {
                 Text("• Geo matching: enabled")
             }
-            Text("• Via: ${CrossingPort.label(state.crossingPort)}")
             Text("• Direction: ${if (state.direction == "HK_TO_SZ") "HK → Shenzhen" else "Shenzhen → HK"}")
             state.deadlineEpochMs?.let {
                 val sdf = SimpleDateFormat("EEE, d MMM · HH:mm", Locale.getDefault())
                 Text("• Deadline: ${sdf.format(Date(it))}")
             }
             if (state.isUrgent) Text("• Urgent: yes")
+            when {
+                state.hasUploadedPhoto -> Text("• Item photo: uploaded")
+                state.hasSelectedPhoto -> Text(
+                    "• Item photo: upload failed, please choose it again",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             Text("• Offered: HK$ ${state.priceHkd.ifBlank { "—" }}")
         }
     }

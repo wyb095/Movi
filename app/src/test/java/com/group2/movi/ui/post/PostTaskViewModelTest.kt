@@ -3,6 +3,8 @@ package com.group2.movi.ui.post
 import com.group2.movi.domain.model.TaskCategory
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import android.net.Uri
+import io.mockk.mockk
 import org.junit.Test
 
 class PostTaskViewModelTest {
@@ -40,5 +42,24 @@ class PostTaskViewModelTest {
 
         assertFalse(invalid.stepValid)
         assertTrue(valid.stepValid)
+    }
+
+    @Test
+    fun `selected photo must be uploaded before submit can proceed`() {
+        val selectedPhoto = mockk<Uri>()
+        val stateWithPendingPhoto = PostFormState(
+            localPhotoUri = selectedPhoto,
+            uploadedPhotoUrl = null
+        )
+        val stateWithUploadedPhoto = PostFormState(
+            localPhotoUri = selectedPhoto,
+            uploadedPhotoUrl = "https://example.com/task.jpg"
+        )
+
+        assertTrue(stateWithPendingPhoto.hasSelectedPhoto)
+        assertFalse(stateWithPendingPhoto.hasUploadedPhoto)
+        assertFalse(stateWithPendingPhoto.photoReadyForSubmit)
+        assertTrue(stateWithUploadedPhoto.hasUploadedPhoto)
+        assertTrue(stateWithUploadedPhoto.photoReadyForSubmit)
     }
 }
