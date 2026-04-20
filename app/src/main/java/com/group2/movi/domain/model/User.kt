@@ -21,6 +21,7 @@ data class User(
 )
 
 data class CommuteEntry(
+    val daysOfWeek: List<String> = emptyList(), // MONDAY..SUNDAY
     val dayOfWeek: String = "", // MONDAY, TUESDAY, ...
     val departureTime: String = "", // "18:00"
     val port: String = "", // FUTIAN, LO_WU, HUANGGANG, LOK_MA_CHAU, HEUNG_YUEN_WAI
@@ -31,3 +32,55 @@ data class CommuteEntry(
     val destinationAddress: String = ""
 )
 
+val ORDERED_DAYS_OF_WEEK = listOf(
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY"
+)
+
+val WORKDAY_DAYS = ORDERED_DAYS_OF_WEEK.take(5)
+val WEEKEND_DAYS = ORDERED_DAYS_OF_WEEK.takeLast(2)
+
+fun normalizeDaysOfWeek(values: Iterable<String>): List<String> {
+    val chosen = values
+        .map { it.trim().uppercase() }
+        .filter { it in ORDERED_DAYS_OF_WEEK }
+        .toSet()
+    return ORDERED_DAYS_OF_WEEK.filter(chosen::contains)
+}
+
+fun shortDayLabel(day: String): String = when (day) {
+    "MONDAY" -> "Mon"
+    "TUESDAY" -> "Tue"
+    "WEDNESDAY" -> "Wed"
+    "THURSDAY" -> "Thu"
+    "FRIDAY" -> "Fri"
+    "SATURDAY" -> "Sat"
+    "SUNDAY" -> "Sun"
+    else -> day
+}
+
+fun summarizeDaysOfWeek(values: Iterable<String>): String {
+    val days = normalizeDaysOfWeek(values)
+    if (days.isEmpty()) return "No days selected"
+    return when {
+        days == WORKDAY_DAYS -> "Weekdays"
+        days == WEEKEND_DAYS -> "Weekend"
+        else -> days.joinToString(", ") { shortDayLabel(it) }
+    }
+}
+
+fun CommuteEntry.normalizedDaysOfWeek(): List<String> {
+    val newDays = normalizeDaysOfWeek(daysOfWeek)
+    return if (newDays.isNotEmpty()) {
+        newDays
+    } else {
+        normalizeDaysOfWeek(listOf(dayOfWeek))
+    }
+}
+
+fun CommuteEntry.scheduleDaySummary(): String = summarizeDaysOfWeek(normalizedDaysOfWeek())

@@ -1,5 +1,6 @@
 package com.group2.movi.data.repository
 
+import android.util.Log
 import android.net.Uri
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -108,7 +109,17 @@ class TaskRepository @Inject constructor(
             createdAt = Timestamp.now()
         )
         val ref = tasks().add(toWrite).await()
+        Log.i(
+            "TaskRepository",
+            "Posted task docId=${ref.id}, requesterId=${task.requesterId}, title=${task.title}"
+        )
         ref.id
+    }.onFailure { error ->
+        Log.e(
+            "TaskRepository",
+            "Failed to post task for requesterId=${task.requesterId}, title=${task.title}",
+            error
+        )
     }
 
     suspend fun acceptTaskAtomic(taskId: String, carrierId: String, carrierName: String): Result<Unit> =

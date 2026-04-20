@@ -115,8 +115,8 @@ private fun MyTaskRow(task: Task, matchCount: Int?, onClick: () -> Unit) {
                 if (task.status == TaskStatus.OPEN && matchCount != null) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        if (matchCount > 0) "$matchCount matching commuters right now"
-                        else "No matching commuters yet",
+                        if (matchCount > 0) "$matchCount carriers with 60%+ route overlap"
+                        else "No carriers above the 60% route-overlap threshold yet",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (matchCount > 0) MoviAccent else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -129,7 +129,7 @@ private fun MyTaskRow(task: Task, matchCount: Int?, onClick: () -> Unit) {
                 )
                 if (task.status == TaskStatus.OPEN && (matchCount ?: 0) > 0) {
                     Spacer(Modifier.height(4.dp))
-                    Pill("$matchCount matches", MoviAccent)
+                    Pill("$matchCount routes", MoviAccent)
                 }
             }
         }

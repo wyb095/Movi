@@ -1,6 +1,5 @@
 package com.group2.movi.domain.model
 
-import com.google.firebase.Timestamp
 import com.google.firebase.firestore.GeoPoint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,23 +7,18 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.LocalDate
-import java.time.ZoneId
-import java.util.Date
 
 class TaskMatchingCorridorTest {
 
-    // Reference points around HK/SZ
-    private val shenzhenBayOffice = GeoPoint(22.5158, 113.9347)      // carrier's SZ origin
-    private val centralHK = GeoPoint(22.2810, 114.1580)               // carrier's HK destination
-    private val huaqiangbei = GeoPoint(22.5430, 114.0850)             // near Futian, on corridor
-    private val sheungWan = GeoPoint(22.2870, 114.1500)               // near Central, on corridor
-    private val kwunTong = GeoPoint(22.3120, 114.2260)                // far off corridor
-    private val yuenLong = GeoPoint(22.4450, 114.0350)                // far off corridor
+    private val shenzhenBayOffice = GeoPoint(22.5158, 113.9347)
+    private val centralHK = GeoPoint(22.2810, 114.1580)
+    private val huaqiangbei = GeoPoint(22.5430, 114.0850)
+    private val sheungWan = GeoPoint(22.2870, 114.1500)
+    private val kwunTong = GeoPoint(22.3120, 114.2260)
+    private val yuenLong = GeoPoint(22.4450, 114.0350)
 
     private val futianCommute = CommuteEntry(
-        dayOfWeek = "MONDAY",
-        departureTime = "18:00",
+        daysOfWeek = listOf("MONDAY"),
         port = CrossingPort.FUTIAN,
         direction = "SZ_TO_HK",
         originLocation = shenzhenBayOffice,
@@ -38,29 +32,23 @@ class TaskMatchingCorridorTest {
         departureTime = "18:00",
         port = CrossingPort.FUTIAN,
         direction = "SZ_TO_HK"
-        // originLocation / destinationLocation are null — legacy data.
     )
 
-    /** 2026-04-20 is a Monday. Build the instant in the test runner's local zone so nextDeparture resolves to the same day. */
-    private fun mondayAtLocal(hour: Int, minute: Int = 0): Long =
-        LocalDate.of(2026, 4, 20)
-            .atTime(hour, minute)
-            .atZone(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-
-    private fun task(pickup: GeoPoint, dropoff: GeoPoint, now: Long, hoursAhead: Long = 4): Task =
-        Task(
-            taskId = "t1",
-            requesterId = "requester",
-            pickupLocation = pickup,
-            pickupAddress = "",
-            dropoffLocation = dropoff,
-            dropoffAddress = "",
-            crossingPort = CrossingPort.FUTIAN,
-            direction = "SZ_TO_HK",
-            requiredBefore = Timestamp(Date(now + hoursAhead * 3_600_000L))
-        )
+    private fun task(
+        pickup: GeoPoint,
+        dropoff: GeoPoint,
+        port: String = CrossingPort.FUTIAN,
+        direction: String = "SZ_TO_HK"
+    ): Task = Task(
+        taskId = "t1",
+        requesterId = "requester",
+        pickupLocation = pickup,
+        pickupAddress = "",
+        dropoffLocation = dropoff,
+        dropoffAddress = "",
+        crossingPort = port,
+        direction = direction
+    )
 
     @Test
     fun `pointToSegmentKm returns zero when point equals segment endpoint`() {
@@ -72,7 +60,6 @@ class TaskMatchingCorridorTest {
 
     @Test
     fun `pointToSegmentKm projects to the nearest interior point`() {
-        // Segment runs roughly north, point is due east ~0.02 longitude degrees (~2km at this latitude).
         val a = GeoPoint(22.50, 114.00)
         val b = GeoPoint(22.60, 114.00)
         val p = GeoPoint(22.55, 114.02)
@@ -95,64 +82,68 @@ class TaskMatchingCorridorTest {
 
     @Test
     fun `corridorDeviationKm returns null for legacy commutes`() {
-        val now = mondayAtLocal(16)
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan, now = now)
+        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
         assertNull(corridorDeviationKm(t, legacyCommute))
     }
 
     @Test
     fun `corridorDeviationKm is small for tasks on the corridor`() {
-        val now = mondayAtLocal(16)
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan, now = now)
+        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
         val dev = corridorDeviationKm(t, futianCommute)
         assertNotNull(dev)
         assertTrue("expected < 5km, got $dev", dev!! < 5.0)
     }
 
     @Test
-    fun `corridorDeviationKm is large for tasks off the corridor`() {
-        val now = mondayAtLocal(16)
-        val t = task(pickup = kwunTong, dropoff = yuenLong, now = now)
-        val dev = corridorDeviationKm(t, futianCommute)
-        assertNotNull(dev)
-        assertTrue("expected >> 5km, got $dev", dev!! > 8.0)
+    fun `routeOverlapPercent is low for far routes`() {
+        val t = task(pickup = kwunTong, dropoff = yuenLong)
+        val percent = routeOverlapPercent(t, futianCommute)
+        assertNotNull(percent)
+        assertTrue("expected below threshold, got $percent", percent!! in 1 until HIGH_ROUTE_MATCH_PERCENT)
     }
 
     @Test
-    fun `findBestMatch prefers corridor commute and reports corridor reason`() {
-        // now = Monday 16:00 local → departure 18:00 local (same day) → deadline 20:00 local → 120 min before deadline.
-        val now = mondayAtLocal(16)
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan, now = now, hoursAhead = 4)
+    fun `findBestMatch returns high route match percent for corridor task`() {
+        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
 
-        val match = findBestMatch(t, listOf(futianCommute), now)
+        val match = findBestMatch(t, listOf(futianCommute))
         assertNotNull("corridor task should match", match)
         assertTrue(match!!.corridorMatch)
-        assertTrue(
-            "reason should mention corridor: ${match.reason}",
-            match.reason.contains("commute corridor")
-        )
+        assertTrue(match.matchPercent >= HIGH_ROUTE_MATCH_PERCENT)
+        assertTrue(match.reason.contains("route match"))
+        assertEquals("Mon", match.scheduleSummary)
     }
 
     @Test
-    fun `findBestMatch filters out off-corridor tasks when commute has a corridor`() {
-        val now = mondayAtLocal(16)
-        val t = task(pickup = kwunTong, dropoff = yuenLong, now = now, hoursAhead = 4)
+    fun `findBestMatch can still match near routes across a different port`() {
+        val t = task(
+            pickup = huaqiangbei,
+            dropoff = sheungWan,
+            port = CrossingPort.LO_WU
+        )
 
-        val match = findBestMatch(t, listOf(futianCommute), now)
-        assertNull("off-corridor task should be filtered", match)
+        val match = findBestMatch(t, listOf(futianCommute))
+        assertNotNull(match)
+        assertTrue(match!!.matchPercent > 0)
     }
 
     @Test
-    fun `legacy commute without corridor falls back to port-center detour and still matches`() {
-        val now = mondayAtLocal(16)
-        val t = task(pickup = huaqiangbei, dropoff = sheungWan, now = now, hoursAhead = 4)
-
-        val match = findBestMatch(t, listOf(legacyCommute), now)
-        assertNotNull("legacy schedule should still match via fallback", match)
-        assertFalse("fallback should not claim corridor match", match!!.corridorMatch)
-        assertTrue(
-            "reason should mention port not corridor: ${match.reason}",
-            match.reason.contains("Via ")
+    fun `findBestMatch rejects opposite direction`() {
+        val t = task(
+            pickup = huaqiangbei,
+            dropoff = sheungWan,
+            direction = "HK_TO_SZ"
         )
+
+        assertNull(findBestMatch(t, listOf(futianCommute)))
+    }
+
+    @Test
+    fun `legacy commute without corridor does not produce route overlap`() {
+        val t = task(pickup = huaqiangbei, dropoff = sheungWan)
+
+        val match = findBestMatch(t, listOf(legacyCommute))
+        assertNull(match)
+        assertFalse(commuteCorridor(legacyCommute).isNotEmpty())
     }
 }

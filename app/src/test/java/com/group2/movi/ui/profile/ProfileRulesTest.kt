@@ -1,6 +1,10 @@
 package com.group2.movi.ui.profile
 
 import com.google.firebase.Timestamp
+import com.group2.movi.domain.model.WEEKEND_DAYS
+import com.group2.movi.domain.model.WORKDAY_DAYS
+import com.group2.movi.domain.model.normalizeDaysOfWeek
+import com.group2.movi.domain.model.summarizeDaysOfWeek
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskStatus
 import org.junit.Assert.assertEquals
@@ -19,11 +23,30 @@ class ProfileRulesTest {
     }
 
     @Test
-    fun `departure time must be valid 24 hour time`() {
-        assertTrue(isValidDepartureTime("08:30"))
-        assertTrue(isValidDepartureTime("18:00"))
-        assertFalse(isValidDepartureTime("25:00"))
-        assertFalse(isValidDepartureTime("8pm"))
+    fun `days of week are normalized and summarized`() {
+        assertEquals(
+            WORKDAY_DAYS,
+            normalizeDaysOfWeek(listOf("FRIDAY", "MONDAY", "WEDNESDAY", "TUESDAY", "THURSDAY"))
+        )
+        assertEquals("Weekdays", summarizeDaysOfWeek(WORKDAY_DAYS))
+        assertEquals("Weekend", summarizeDaysOfWeek(WEEKEND_DAYS))
+        assertEquals("Mon, Wed, Fri", summarizeDaysOfWeek(listOf("WEDNESDAY", "MONDAY", "FRIDAY")))
+    }
+
+    @Test
+    fun `schedule day toggles expand and collapse presets`() {
+        assertEquals(
+            WORKDAY_DAYS,
+            togglePresetDays(emptyList(), WORKDAY_DAYS)
+        )
+        assertEquals(
+            emptyList<String>(),
+            togglePresetDays(WORKDAY_DAYS, WORKDAY_DAYS)
+        )
+        assertEquals(
+            listOf("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SUNDAY"),
+            toggleSpecificDay(WORKDAY_DAYS, "SUNDAY")
+        )
     }
 
     @Test

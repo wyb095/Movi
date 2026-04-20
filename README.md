@@ -59,6 +59,10 @@ The project targets **Java 17**. Android Studio ships with a compatible JDK, or 
    - **Storage** (start in test mode during development)
    - **Cloud Messaging** (auto-enabled)
 
+Important:
+For team testing, every device must be built against the same shared Firebase project and the same `app/google-services.json`.
+If different teammates each create their own local Firebase project, task posts, users, and chats will go to different Firestore databases and other devices will not see them.
+
 ### 4. Set up the Google Maps API key
 1. Go to <https://console.cloud.google.com/>, enable **Maps SDK for Android**, create an API key.
 2. Copy `local.properties.template` → `local.properties` and paste the key.

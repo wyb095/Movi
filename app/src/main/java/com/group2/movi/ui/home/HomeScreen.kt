@@ -26,7 +26,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -57,13 +56,14 @@ import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.firebase.Timestamp
 import com.group2.movi.domain.model.CrossingPort
+import com.group2.movi.domain.model.portCenter
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskCategory
-import com.group2.movi.domain.model.taskMarkerPoint
 import com.group2.movi.ui.components.EmptyState
 import com.group2.movi.ui.components.LoadingBox
 import com.group2.movi.ui.components.Pill
 import com.group2.movi.ui.theme.MoviAccent
+import com.group2.movi.ui.theme.MoviSecondary
 import com.group2.movi.ui.theme.MoviWarning
 import java.util.concurrent.TimeUnit
 
@@ -94,26 +94,18 @@ fun HomeScreen(
                 state = state,
                 mode = mode,
                 onModeChange = { mode = it },
-                onSelectCategory = vm::selectCategory,
-                onDetourChange = vm::setMaxDetourMinutes
+                onSelectCategory = vm::selectCategory
             )
 
             when {
                 state.loading -> LoadingBox()
                 state.tasks.isEmpty() -> EmptyState(
-                    title = if (state.hasCommuteSchedule) {
-                        "No tasks fit your commute right now"
-                    } else {
-                        "No open tasks right now"
-                    },
-                    subtitle = if (state.hasCommuteSchedule) {
-                        "Try widening your detour filter or add more commute entries in Schedule."
-                    } else {
-                        "Pull down to refresh or check back soon."
-                    }
+                    title = "No open tasks right now",
+                    subtitle = "Pull down to refresh or check back soon."
                 )
                 mode == DiscoverMode.MAP -> TaskMap(
                     tasks = state.tasks,
+                    hasCommuteSchedule = state.hasCommuteSchedule,
                     corridors = state.corridors,
                     onTaskClick = onTaskClick,
                     modifier = Modifier.fillMaxSize()
@@ -125,8 +117,10 @@ fun HomeScreen(
                     items(state.tasks, key = { it.task.taskId }) { card ->
                         TaskCard(
                             task = card.task,
+                            matchState = card.matchState,
+                            matchPercent = card.matchPercent,
                             matchReason = card.match?.reason,
-                            detourMinutes = card.match?.detourMinutes,
+                            hasCommuteSchedule = state.hasCommuteSchedule,
                             onClick = { onTaskClick(card.task.taskId) }
                         )
                     }
@@ -141,8 +135,7 @@ private fun DiscoverToolbar(
     state: HomeUiState,
     mode: DiscoverMode,
     onModeChange: (DiscoverMode) -> Unit,
-    onSelectCategory: (String?) -> Unit,
-    onDetourChange: (Float) -> Unit
+    onSelectCategory: (String?) -> Unit
 ) {
     Column {
         CategoryFilterRow(
@@ -171,20 +164,9 @@ private fun DiscoverToolbar(
         if (state.hasCommuteSchedule) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(
-                    "Smart matching is on. Showing tasks that fit your commute and deadline.",
+                    "Showing all open tasks. Stronger route overlap is ranked first.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Max detour: ${state.maxDetourMinutes.toInt()} min",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Slider(
-                    value = state.maxDetourMinutes,
-                    onValueChange = onDetourChange,
-                    valueRange = 10f..120f
                 )
             }
         }
@@ -194,6 +176,7 @@ private fun DiscoverToolbar(
 @Composable
 private fun TaskMap(
     tasks: List<DiscoverTask>,
+    hasCommuteSchedule: Boolean,
     corridors: List<List<GeoPoint>>,
     onTaskClick: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -254,7 +237,7 @@ private fun TaskMap(
             Marker(
                 state = MarkerState(position = LatLng(point.latitude, point.longitude)),
                 title = card.task.title.ifBlank { "Task" },
-                snippet = card.match?.reason ?: "HK$ ${card.task.offeredPrice.toInt()}",
+                snippet = mapSnippet(card, hasCommuteSchedule),
                 onClick = {
                     onTaskClick(card.task.taskId)
                     true
@@ -292,8 +275,10 @@ private fun CategoryFilterRow(selected: String?, onSelect: (String?) -> Unit) {
 @Composable
 fun TaskCard(
     task: Task,
+    matchState: DiscoverMatchState,
+    matchPercent: Int?,
     matchReason: String?,
-    detourMinutes: Int?,
+    hasCommuteSchedule: Boolean,
     onClick: () -> Unit
 ) {
     Card(
@@ -336,10 +321,23 @@ fun TaskCard(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.weight(1f))
-                if (task.isUrgent) {
-                    Pill("URGENT", MoviWarning)
-                } else if (detourMinutes != null) {
-                    Pill("${detourMinutes}m detour", MoviAccent)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (task.isUrgent) {
+                        Pill("URGENT", MoviWarning)
+                    }
+                    when (matchState) {
+                        DiscoverMatchState.MATCHED -> {
+                            if (matchPercent != null) {
+                                Pill("${matchPercent}% match", MoviAccent)
+                            }
+                        }
+                        DiscoverMatchState.OWN -> Pill("MY TASK", MoviSecondary)
+                        DiscoverMatchState.UNMATCHED -> {
+                            if (matchPercent != null) {
+                                Pill("${matchPercent}% match", MoviAccent)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -365,17 +363,39 @@ fun TaskCard(
                 )
             }
 
-            if (!matchReason.isNullOrBlank()) {
+            val supportingText = when {
+                !matchReason.isNullOrBlank() -> matchReason
+                matchState == DiscoverMatchState.OWN -> "Your posted task stays visible here while carriers browse the market."
+                hasCommuteSchedule -> "No usable route overlap with your commute yet."
+                else -> null
+            }
+            if (!supportingText.isNullOrBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    matchReason,
+                    supportingText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (matchState == DiscoverMatchState.MATCHED) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
         }
     }
 }
+
+private fun mapSnippet(card: DiscoverTask, hasCommuteSchedule: Boolean): String = when (card.matchState) {
+    DiscoverMatchState.MATCHED -> card.matchPercent?.let { "$it% match" } ?: "Matched task"
+    DiscoverMatchState.OWN -> "My task"
+    DiscoverMatchState.UNMATCHED -> if (hasCommuteSchedule) {
+        card.matchPercent?.let { "$it% match" } ?: "No route overlap yet"
+    } else {
+        "HK$ ${card.task.offeredPrice.toInt()}"
+    }
+}
+
+private fun taskMarkerPoint(task: Task): GeoPoint = task.pickupLocation ?: portCenter(task.crossingPort)
 
 internal fun categoryEmoji(category: String): String = when (category) {
     TaskCategory.FOOD -> "🍱"

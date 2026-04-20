@@ -171,15 +171,15 @@ fun TaskDetailScreen(
 
                 Card(shape = RoundedCornerShape(12.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Smart matching", fontWeight = FontWeight.SemiBold)
+                        Text("Route match", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.size(8.dp))
                         when {
                             vm.isRequester -> {
                                 Text(
                                     if (state.matchingCarrierCount > 0) {
-                                        "${state.matchingCarrierCount} commuters currently match this port, direction, and deadline."
+                                        "${state.matchingCarrierCount} carriers currently have at least 60% route overlap for this task."
                                     } else {
-                                        "No commute match yet. Keeping your schedule live for new carriers."
+                                        "No carrier has reached the 60% route-overlap threshold yet."
                                     },
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -197,8 +197,14 @@ fun TaskDetailScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            state.hasCommuteRoute -> {
+                                Text(
+                                    "This task is currently below the 60% overlap threshold for your saved commute routes.",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                             else -> Text(
-                                "Add your commute schedule to unlock route-aware ranking and detour estimates.",
+                                "Add a commute route with origin and destination to unlock route-overlap ranking.",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }

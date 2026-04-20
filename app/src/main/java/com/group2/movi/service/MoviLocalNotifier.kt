@@ -20,13 +20,13 @@ class MoviLocalNotifier @Inject constructor(
         if (!hasNotificationPermission(context)) return
         createChannel()
         val body = if (count == 1) {
-            "A commuter now matches \"$taskTitle\"."
+            "A carrier now has strong route overlap for \"$taskTitle\"."
         } else {
-            "$count commuters now match \"$taskTitle\"."
+            "$count carriers now have strong route overlap for \"$taskTitle\"."
         }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Smart match found")
+            .setContentTitle("Route overlap found")
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -38,10 +38,10 @@ class MoviLocalNotifier @Inject constructor(
     private fun createChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Movi smart matching",
+            "Movi route overlap",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Alerts when a posted task now has matching commuters."
+            description = "Alerts when a posted task now has strongly overlapping carrier routes."
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)

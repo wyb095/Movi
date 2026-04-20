@@ -1,10 +1,13 @@
 package com.group2.movi.ui.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.data.repository.TaskRepository
 import com.group2.movi.data.repository.UserRepository
+import com.group2.movi.domain.model.CommuteEntry
+import com.group2.movi.domain.model.HIGH_ROUTE_MATCH_PERCENT
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskMatchInsight
 import com.group2.movi.domain.model.commuteCorridor
@@ -24,13 +27,25 @@ import javax.inject.Inject
 
 data class DiscoverTask(
     val task: Task,
-    val match: TaskMatchInsight? = null
+    val match: TaskMatchInsight? = null,
+    val matchPercent: Int? = match?.matchPercent,
+    val isOwnTask: Boolean = false,
+    val matchState: DiscoverMatchState = when {
+        isOwnTask -> DiscoverMatchState.OWN
+        (match?.matchPercent ?: 0) >= HIGH_ROUTE_MATCH_PERCENT -> DiscoverMatchState.MATCHED
+        else -> DiscoverMatchState.UNMATCHED
+    }
 )
+
+enum class DiscoverMatchState {
+    MATCHED,
+    UNMATCHED,
+    OWN
+}
 
 data class HomeUiState(
     val tasks: List<DiscoverTask> = emptyList(),
     val selectedCategory: String? = null,
-    val maxDetourMinutes: Float = 60f,
     val hasCommuteSchedule: Boolean = false,
     val corridors: List<List<GeoPoint>> = emptyList(),
     val loading: Boolean = true,
@@ -45,7 +60,6 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val selectedCategory = MutableStateFlow<String?>(null)
-    private val maxDetourMinutes = MutableStateFlow(60f)
 
     private val me = userRepo.currentUid?.let { uid ->
         userRepo.observeUser(uid)
@@ -60,35 +74,26 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(rawTasks, me, maxDetourMinutes) { tasks, user, detour ->
+            combine(rawTasks, me) { tasks, user ->
                 val schedule = user?.commuteSchedule.orEmpty()
-                val hasSchedule = schedule.isNotEmpty()
+                val hasRouteSchedule = schedule.any { commuteCorridor(it).isNotEmpty() }
                 val corridors = schedule.map { commuteCorridor(it) }.filter { it.isNotEmpty() }
-                val mapped = tasks.map { task ->
-                    DiscoverTask(
-                        task = task,
-                        match = if (hasSchedule) findBestMatch(task, schedule) else null
-                    )
-                }
-                val visible = if (hasSchedule) {
-                    mapped
-                        .filter { it.match != null && it.match.detourMinutes <= detour.toInt() }
-                        .sortedWith(
-                            compareByDescending<DiscoverTask> { it.match?.score ?: 0.0 }
-                                .thenByDescending { it.task.isUrgent }
-                                .thenByDescending { it.task.createdAt?.seconds ?: 0L }
-                        )
-                } else {
-                    mapped.sortedWith(
-                        compareByDescending<DiscoverTask> { it.task.isUrgent }
-                            .thenByDescending { it.task.createdAt?.seconds ?: 0L }
-                    )
-                }
+                val visible = buildDiscoverFeed(
+                    tasks = tasks,
+                    currentUid = currentUid,
+                    schedule = schedule
+                )
+                val matchedCount = visible.count { it.matchState == DiscoverMatchState.MATCHED }
+                val unmatchedCount = visible.count { it.matchState == DiscoverMatchState.UNMATCHED }
+                val ownCount = visible.count { it.matchState == DiscoverMatchState.OWN }
+                Log.d(
+                    "HomeViewModel",
+                    "Discover feed: matched=$matchedCount, unmatched=$unmatchedCount, own=$ownCount, totalOpen=${tasks.size}, hasRouteSchedule=$hasRouteSchedule"
+                )
                 HomeUiState(
                     tasks = visible,
                     selectedCategory = selectedCategory.value,
-                    maxDetourMinutes = detour,
-                    hasCommuteSchedule = hasSchedule,
+                    hasCommuteSchedule = hasRouteSchedule,
                     corridors = corridors,
                     loading = false
                 )
@@ -100,9 +105,74 @@ class HomeViewModel @Inject constructor(
         selectedCategory.value = category
     }
 
-    fun setMaxDetourMinutes(value: Float) {
-        maxDetourMinutes.value = value
+    val currentUid: String? get() = userRepo.currentUid
+}
+
+private val matchedTaskComparator =
+    compareByDescending<DiscoverTask> { it.matchPercent ?: 0 }
+        .thenByDescending { it.task.isUrgent }
+        .thenByDescending { it.task.createdAt?.seconds ?: 0L }
+
+private val unmatchedTaskComparator =
+    compareByDescending<DiscoverTask> { it.matchPercent ?: -1 }
+        .thenByDescending { it.task.isUrgent }
+        .thenByDescending { it.task.createdAt?.seconds ?: 0L }
+
+private val fallbackTaskComparator =
+    compareByDescending<DiscoverTask> { it.task.isUrgent }
+        .thenByDescending { it.task.createdAt?.seconds ?: 0L }
+
+internal fun buildDiscoverFeed(
+    tasks: List<Task>,
+    currentUid: String?,
+    schedule: List<CommuteEntry>,
+    nowMillis: Long = System.currentTimeMillis()
+): List<DiscoverTask> {
+    val matched = mutableListOf<DiscoverTask>()
+    val unmatched = mutableListOf<DiscoverTask>()
+    val own = mutableListOf<DiscoverTask>()
+    val hasRouteSchedule = schedule.any { commuteCorridor(it).isNotEmpty() }
+
+    tasks.forEach { task ->
+        val isOwnTask = currentUid != null && task.requesterId == currentUid
+        if (isOwnTask) {
+            own += DiscoverTask(
+                task = task,
+                isOwnTask = true,
+                matchState = DiscoverMatchState.OWN
+            )
+            return@forEach
+        }
+
+        val bestMatch = if (hasRouteSchedule) {
+            findBestMatch(task, schedule, nowMillis)
+        } else {
+            null
+        }
+
+        if ((bestMatch?.matchPercent ?: 0) >= HIGH_ROUTE_MATCH_PERCENT) {
+            matched += DiscoverTask(
+                task = task,
+                match = bestMatch,
+                matchPercent = bestMatch?.matchPercent,
+                matchState = DiscoverMatchState.MATCHED
+            )
+        } else {
+            unmatched += DiscoverTask(
+                task = task,
+                match = bestMatch,
+                matchPercent = bestMatch?.matchPercent,
+                matchState = DiscoverMatchState.UNMATCHED
+            )
+        }
     }
 
-    val currentUid: String? get() = userRepo.currentUid
+    matched.sortWith(matchedTaskComparator)
+    if (hasRouteSchedule) {
+        unmatched.sortWith(unmatchedTaskComparator)
+    } else {
+        unmatched.sortWith(fallbackTaskComparator)
+    }
+    own.sortWith(fallbackTaskComparator)
+    return matched + unmatched + own
 }

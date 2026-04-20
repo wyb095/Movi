@@ -1,13 +1,6 @@
 package com.group2.movi.domain.model
 
 import com.google.firebase.firestore.GeoPoint
-import java.time.DayOfWeek
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.temporal.TemporalAdjusters
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -16,16 +9,16 @@ import kotlin.math.sqrt
 
 data class TaskMatchInsight(
     val score: Double,
-    val detourMinutes: Int,
-    val minutesBeforeDeadline: Int,
+    val matchPercent: Int,
     val scheduleSummary: String,
     val reason: String,
     val corridorMatch: Boolean = false
 )
 
+const val HIGH_ROUTE_MATCH_PERCENT = 60
+private const val MAX_ROUTE_DEVIATION_KM = 10.0
 private const val DEFAULT_SPEED_KMH = 24.0
 private const val SERVICE_BUFFER_MINUTES = 10
-private const val CORRIDOR_BUFFER_KM = 5.0 // combined pickup + dropoff deviation budget
 private val GEO_REGEX = Regex("""(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)""")
 private val MAPS_REGEX = Regex("""@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)""")
 
@@ -101,10 +94,30 @@ internal fun corridorDeviationKm(task: Task, entry: CommuteEntry): Double? {
 /** Detour estimate based on the real corridor. Null when carrier has no origin/destination yet. */
 fun estimateCorridorDetourMinutes(task: Task, entry: CommuteEntry): Int? {
     val dev = corridorDeviationKm(task, entry) ?: return null
-    // ×2 because the carrier drives off-corridor then back; + buffer for handoff time.
     return ((dev * 2 / DEFAULT_SPEED_KMH) * 60.0 + SERVICE_BUFFER_MINUTES)
         .roundToInt()
         .coerceAtLeast(SERVICE_BUFFER_MINUTES)
+}
+
+internal fun taskRoutePoints(task: Task): List<GeoPoint> {
+    val pickup = task.pickupLocation ?: return emptyList()
+    val dropoff = task.dropoffLocation ?: return emptyList()
+    return listOf(pickup, portCenter(task.crossingPort), dropoff)
+}
+
+internal fun routeOverlapPercent(task: Task, entry: CommuteEntry): Int? {
+    val corridor = commuteCorridor(entry)
+    if (corridor.size < 2) return null
+    val routePoints = taskRoutePoints(task)
+    if (routePoints.isEmpty()) return null
+    val segments = corridor.zipWithNext()
+    val averageDeviationKm = routePoints
+        .map { point -> segments.minOf { (a, b) -> pointToSegmentKm(point, a, b) } }
+        .average()
+    val percent = ((1.0 - averageDeviationKm / MAX_ROUTE_DEVIATION_KM) * 100.0)
+        .roundToInt()
+        .coerceIn(0, 100)
+    return percent.takeIf { it > 0 }
 }
 
 fun findBestMatch(
@@ -113,7 +126,7 @@ fun findBestMatch(
     nowMillis: Long = System.currentTimeMillis()
 ): TaskMatchInsight? {
     if (schedule.isEmpty()) return null
-    return schedule.mapNotNull { computeMatch(task, it, nowMillis) }.maxByOrNull { it.score }
+    return schedule.mapNotNull { computeMatch(task, it) }.maxByOrNull { it.score }
 }
 
 fun countMatchingCarriers(
@@ -122,80 +135,24 @@ fun countMatchingCarriers(
     nowMillis: Long = System.currentTimeMillis()
 ): Int = carriers.count { carrier ->
     carrier.userId != task.requesterId &&
-        findBestMatch(task, carrier.commuteSchedule, nowMillis) != null
+        (findBestMatch(task, carrier.commuteSchedule, nowMillis)?.matchPercent ?: 0) >= HIGH_ROUTE_MATCH_PERCENT
 }
 
-fun taskMarkerPoint(task: Task): GeoPoint = task.pickupLocation ?: portCenter(task.crossingPort)
-
-private fun computeMatch(
-    task: Task,
-    entry: CommuteEntry,
-    nowMillis: Long
-): TaskMatchInsight? {
-    if (entry.port != task.crossingPort || entry.direction != task.direction) return null
-    val deadline = task.requiredBefore ?: return null
-    val departure = nextDeparture(entry, nowMillis) ?: return null
-    val minutesBeforeDeadline = Duration.between(
-        departure.toInstant(),
-        deadline.toDate().toInstant()
-    ).toMinutes().toInt()
-    if (minutesBeforeDeadline < -15) return null
-
-    val corridorDev = corridorDeviationKm(task, entry)
-    val corridorDetour = estimateCorridorDetourMinutes(task, entry)
-    val corridorActive = corridorDev != null && corridorDetour != null
-    // Hard filter: when carrier has a full corridor, tasks that sit too far off it are excluded.
-    if (corridorActive && corridorDev!! > CORRIDOR_BUFFER_KM) return null
-
-    val detourMinutes = corridorDetour ?: estimateDetourMinutes(task)
-    if (detourMinutes > 120) return null
-
-    val timeScore = when {
-        minutesBeforeDeadline in 45..180 -> 1.0
-        minutesBeforeDeadline in 15..44 -> 0.8
-        minutesBeforeDeadline in 0..14 -> 0.65
-        minutesBeforeDeadline in -15..-1 -> 0.35
-        else -> 0.2
-    }
-    val detourScore = (1.0 - detourMinutes / 120.0).coerceIn(0.0, 1.0)
-    val urgencyBoost = if (task.isUrgent) 0.08 else 0.0
-    val corridorBoost = if (corridorActive) 0.05 else 0.0
-    val score = (timeScore * 0.6) + (detourScore * 0.32) + urgencyBoost + corridorBoost
-    val deadlineLabel = when {
-        minutesBeforeDeadline >= 60 -> "${minutesBeforeDeadline / 60}h before deadline"
-        minutesBeforeDeadline >= 0 -> "$minutesBeforeDeadline min before deadline"
-        else -> "${-minutesBeforeDeadline} min late risk"
-    }
-    val reason = if (corridorActive) {
-        "Within your commute corridor · ~$detourMinutes min detour · $deadlineLabel"
+private fun computeMatch(task: Task, entry: CommuteEntry): TaskMatchInsight? {
+    if (entry.direction != task.direction) return null
+    val matchPercent = routeOverlapPercent(task, entry) ?: return null
+    val reason = if (matchPercent >= HIGH_ROUTE_MATCH_PERCENT) {
+        "$matchPercent% route match with your commute"
     } else {
-        "Via ${CrossingPort.label(entry.port)} · ~$detourMinutes min detour · $deadlineLabel"
+        "$matchPercent% route overlap with your commute"
     }
-
     return TaskMatchInsight(
-        score = score,
-        detourMinutes = detourMinutes,
-        minutesBeforeDeadline = minutesBeforeDeadline,
-        scheduleSummary = "${entry.dayOfWeek} ${entry.departureTime}",
+        score = matchPercent / 100.0,
+        matchPercent = matchPercent,
+        scheduleSummary = entry.scheduleDaySummary(),
         reason = reason,
-        corridorMatch = corridorActive
+        corridorMatch = matchPercent >= HIGH_ROUTE_MATCH_PERCENT
     )
-}
-
-private fun nextDeparture(entry: CommuteEntry, nowMillis: Long): ZonedDateTime? {
-    val day = runCatching { DayOfWeek.valueOf(entry.dayOfWeek) }.getOrNull() ?: return null
-    val time = runCatching { LocalTime.parse(entry.departureTime) }.getOrNull() ?: return null
-    val zone = ZoneId.systemDefault()
-    val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
-    var candidate = now.with(TemporalAdjusters.nextOrSame(day))
-        .withHour(time.hour)
-        .withMinute(time.minute)
-        .withSecond(0)
-        .withNano(0)
-    if (candidate.isBefore(now.minusMinutes(30))) {
-        candidate = candidate.plusWeeks(1)
-    }
-    return candidate
 }
 
 private fun haversineKm(a: GeoPoint, b: GeoPoint): Double {

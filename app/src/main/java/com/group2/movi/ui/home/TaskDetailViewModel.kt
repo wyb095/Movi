@@ -7,6 +7,7 @@ import com.group2.movi.data.repository.TaskRepository
 import com.group2.movi.data.repository.UserRepository
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskMatchInsight
+import com.group2.movi.domain.model.commuteCorridor
 import com.group2.movi.domain.model.countMatchingCarriers
 import com.group2.movi.domain.model.findBestMatch
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,9 +23,17 @@ data class TaskDetailUiState(
     val task: Task? = null,
     val myMatch: TaskMatchInsight? = null,
     val matchingCarrierCount: Int = 0,
+    val hasCommuteRoute: Boolean = false,
     val loading: Boolean = true,
     val accepting: Boolean = false,
     val error: String? = null
+)
+
+private data class TaskDetailSnapshot(
+    val task: Task?,
+    val myMatch: TaskMatchInsight?,
+    val matchingCarrierCount: Int,
+    val hasCommuteRoute: Boolean
 )
 
 @HiltViewModel
@@ -47,18 +56,25 @@ class TaskDetailViewModel @Inject constructor(
             val me = currentUid?.let { userRepo.observeUser(it) } ?: flowOf(null)
             val carriers = userRepo.observeUsersWithCommuteSchedule(excludeUid = currentUid)
             combine(taskRepo.observeTask(taskId), me, carriers) { task, user, users ->
+                val hasCommuteRoute = user?.commuteSchedule?.any { commuteCorridor(it).isNotEmpty() } == true
                 val myMatch = if (task != null && user != null && task.requesterId != user.userId) {
                     findBestMatch(task, user.commuteSchedule)
                 } else {
                     null
                 }
                 val carrierCount = if (task != null) countMatchingCarriers(task, users) else 0
-                Triple(task, myMatch, carrierCount)
-            }.collect { (task, myMatch, carrierCount) ->
-                _state.value = _state.value.copy(
+                TaskDetailSnapshot(
                     task = task,
                     myMatch = myMatch,
                     matchingCarrierCount = carrierCount,
+                    hasCommuteRoute = hasCommuteRoute
+                )
+            }.collect { snapshot ->
+                _state.value = _state.value.copy(
+                    task = snapshot.task,
+                    myMatch = snapshot.myMatch,
+                    matchingCarrierCount = snapshot.matchingCarrierCount,
+                    hasCommuteRoute = snapshot.hasCommuteRoute,
                     loading = false
                 )
             }
