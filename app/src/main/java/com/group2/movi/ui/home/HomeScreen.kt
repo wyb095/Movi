@@ -55,6 +55,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.firebase.Timestamp
+import com.group2.movi.config.MapsConfig
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskCategory
 import com.group2.movi.ui.components.EmptyState
@@ -181,6 +182,15 @@ private fun TaskMap(
     onTaskClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (!MapsConfig.isConfigured) {
+        EmptyState(
+            title = "Map view needs the shared Maps key",
+            subtitle = "Add MAPS_API_KEY to local.properties to enable the team map. List view and pasted coordinates still work without it.",
+            icon = "🗺️"
+        )
+        return
+    }
+
     val taskPoints = tasks.mapNotNull { taskMarkerPoint(it.task) }
     val corridorPoints = corridors.flatten()
     val allPoints = taskPoints + corridorPoints

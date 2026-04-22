@@ -1,9 +1,11 @@
-# RENAME THIS FILE to local.properties BEFORE building.
-# (local.properties is gitignored so keys don't leak.)
+# Android Studio usually creates local.properties after the first sync.
+# If it does not, copy this template to local.properties and fill in sdk.dir.
+# local.properties is gitignored so machine-specific values stay local.
 
-## Android SDK path — Android Studio fills this in automatically.
-# sdk.dir=/Users/<you>/Library/Android/sdk
+## Android SDK path examples:
+## macOS:   sdk.dir=/Users/<you>/Library/Android/sdk
+## Windows: sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
 
-## Google Maps API key for the maps composable.
-## Get one from https://console.cloud.google.com/ → enable "Maps SDK for Android"
-MAPS_API_KEY=AIzaSyBwvKjuiYfxVcs1PR2iJwRoGggLpyVaU7E
+## Shared Google Maps API key for the team project.
+## Ask the team for the shared key instead of creating a separate local one.
+MAPS_API_KEY=YOUR_SHARED_MAPS_API_KEY

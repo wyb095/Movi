@@ -40,49 +40,89 @@ All four repositories (Auth, User, Task, Chat, Review) are wired up to real Fire
 
 ## 🚀 Getting started
 
+### Team setup contract
+
+For shared testing and demo, everyone should use the same backend config:
+
+- the same shared `app/google-services.json`
+- the same shared `MAPS_API_KEY` in `local.properties`
+
+Do **not** commit either one to GitHub. Share them with teammates through a private channel.
+
 ### 1. Install Android Studio
+
 Use **Android Studio Ladybug (2024.2)** or newer.
 
 ### 1.1. Install Java 17
+
 The project targets **Java 17**. Android Studio ships with a compatible JDK, or you can point `JAVA_HOME` to any local JDK 17 install.
 
 ### 2. Open the project
-`File → Open…` and pick the `Movi/` folder. Gradle will sync automatically — first sync takes a few minutes.
 
-### 3. Set up Firebase
-1. Go to <https://console.firebase.google.com/> and create a new project called **Movi**.
-2. Add an Android app with package name `com.group2.movi`.
-3. Download `google-services.json` and drop it into `app/` (it's gitignored for security).
-4. In the Firebase console, enable:
-   - **Authentication → Email/Password** sign-in method
-   - **Firestore Database** (start in test mode during development)
-   - **Storage** (start in test mode during development)
-   - **Cloud Messaging** (auto-enabled)
+Open `Movi/` in Android Studio with `File → Open…`. The first Gradle sync may take a few minutes.
+
+What should happen on first open:
+
+- Android Studio usually creates a local `local.properties` file with your machine's `sdk.dir`.
+- That file is local-only and should stay untracked.
+- If Android Studio does **not** create it, copy `local.properties.template` to `local.properties` and fill in `sdk.dir` yourself.
+
+### 3. Add the shared Firebase config
+
+1. Ask the team for the shared `app/google-services.json`.
+2. Place it at `app/google-services.json`.
+3. Re-sync if Android Studio asks.
 
 Important:
-For team testing, every device must be built against the same shared Firebase project and the same `app/google-services.json`.
-If different teammates each create their own local Firebase project, task posts, users, and chats will go to different Firestore databases and other devices will not see them.
 
-### 4. Set up the Google Maps API key
-1. Go to <https://console.cloud.google.com/>, enable **Maps SDK for Android**, create an API key.
-2. Copy `local.properties.template` → `local.properties` and paste the key.
+- `google-services.json` is gitignored on purpose.
+- If teammates create separate Firebase projects, users, tasks, chats, and reviews will be split across different Firestore databases and you will not see each other's data.
+
+### 4. Add the shared Google Maps key
+
+1. Open your local `local.properties`.
+2. Add the shared team key:
+
+```properties
+MAPS_API_KEY=your_shared_team_key
+```
+
+3. If `local.properties` does not exist yet, copy `local.properties.template` to `local.properties`, then fill in both `sdk.dir` and `MAPS_API_KEY`.
+
+Without a real Maps key, the project still compiles and the app still opens, but:
+
+- Home `Map` view is disabled
+- Places autocomplete is disabled
+- teammates can still paste Google Maps links or raw `lat,lng` coordinates when posting tasks or adding commute routes
 
 ### 5. Run
-Plug in an Android 8+ device (or start an emulator), hit the green **Run** button in Android Studio.
+
+Start an emulator or connect an Android 8+ device, then hit the green **Run** button in Android Studio.
 
 ### 6. Gradle wrapper
-This repo now includes the Gradle wrapper, so you do **not** need a globally installed `gradle` command.
+
+Use the Gradle wrapper included in the repo instead of a globally installed `gradle` command.
 
 - macOS / Linux: `./gradlew tasks`
 - Windows: `gradlew.bat tasks`
 
 If the shell says `Permission denied`, run `chmod +x ./gradlew` once.
 
+### First-open checklist
+
+Before you start feature work, confirm these local-only files exist and are **not** staged in Git:
+
+- `local.properties` with your `sdk.dir`
+- `app/google-services.json` from the team
+- optional `MAPS_API_KEY` line inside `local.properties`
+
 ---
 
 ## ✅ Verification
 
-Use the wrapper for every local or CI verification step:
+### Android Studio / local verification
+
+Use the wrapper for every local verification step:
 
 ```bash
 ./gradlew app:compileDebugKotlin
@@ -97,13 +137,23 @@ You can also run the full local verification chain in one command:
 ./gradlew app:compileDebugKotlin app:testDebugUnitTest app:lintDebug app:build
 ```
 
-### Secret-less / CI verification
+### CLI / CI verification
 
-`google-services.json` is intentionally gitignored, so fresh clones and CI environments usually do not have Firebase config checked in.
+For pure command-line or CI environments, create local config explicitly before running the wrapper.
 
-For those environments, generate a placeholder config before running the wrapper:
+If `local.properties` is missing, create it with your Android SDK path:
 
 ```bash
+printf "sdk.dir=%s\nMAPS_API_KEY=DISABLED\n" "$ANDROID_SDK_ROOT" > local.properties
+```
+
+`MAPS_API_KEY=DISABLED` is a safe placeholder that keeps the build reproducible while intentionally disabling map search/view.
+
+`google-services.json` is also intentionally gitignored, so fresh clones and CI should generate a placeholder file before building:
+
+```bash
+printf "sdk.dir=%s\nMAPS_API_KEY=DISABLED\n" "$ANDROID_SDK_ROOT" > local.properties
+
 cat > app/google-services.json <<'JSON'
 {
   "project_info": {
@@ -139,9 +189,20 @@ JSON
 ./gradlew app:compileDebugKotlin app:testDebugUnitTest app:lintDebug app:build
 ```
 
-The placeholder file is only for build reproducibility. Real devices and Firebase-backed features still need your actual `app/google-services.json`.
+The placeholder file is only for build reproducibility. Real devices and Firebase-backed features still need the team's actual `app/google-services.json`.
 
-The repo also includes a minimal GitHub Actions workflow at `.github/workflows/android.yml` that runs the same wrapper-based verification chain, so local and CI entrypoints stay aligned.
+The repo also includes a minimal GitHub Actions workflow at `.github/workflows/android.yml` that runs the same wrapper-based verification chain with placeholder local config, so local and CI entrypoints stay aligned.
+
+### Common setup issues
+
+- `SDK location not found`
+  Android Studio did not create `local.properties`, or `sdk.dir` points to the wrong Android SDK location. Copy `local.properties.template` if needed and fix the path.
+- `google-services.json is missing`
+  Ask the team for the shared Firebase config and place it at `app/google-services.json`.
+- `MAPS_API_KEY` not configured
+  The app will still open, but map view and Places autocomplete stay disabled until you add the shared team key to `local.properties`.
+- Firebase Auth / Firestore / Storage features fail at runtime
+  Confirm everyone is using the same Firebase project, and check the Firebase console rules plus enabled services for Auth, Firestore, Storage, and Messaging.
 
 ---
 

@@ -35,10 +35,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.Place
 import com.google.android.libraries.places.widget.Autocomplete
 import com.google.android.libraries.places.widget.model.AutocompleteActivityMode
 import com.google.firebase.firestore.GeoPoint
+import com.group2.movi.config.MapsConfig
 
 /**
  * Location input with two modes:
@@ -55,6 +57,7 @@ fun PlacePickerField(
 ) {
     val context = LocalContext.current
     var showPasteDialog by remember { mutableStateOf(false) }
+    val placesEnabled = MapsConfig.isConfigured && Places.isInitialized()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -80,7 +83,7 @@ fun PlacePickerField(
                     .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-                    .clickable {
+                    .clickable(enabled = placesEnabled) {
                         val fields = listOf(
                             Place.Field.ID,
                             Place.Field.NAME,
@@ -105,7 +108,11 @@ fun PlacePickerField(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (value.isBlank()) "Search address…" else value,
+                    text = when {
+                        value.isNotBlank() -> value
+                        placesEnabled -> "Search address…"
+                        else -> "Paste a Maps link or coordinates"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
@@ -116,6 +123,13 @@ fun PlacePickerField(
             IconButton(onClick = { showPasteDialog = true }) {
                 Icon(Icons.Filled.Link, contentDescription = "Paste Google Maps link")
             }
+        }
+        if (!placesEnabled) {
+            Text(
+                "Address search is unavailable until you add the shared MAPS_API_KEY to local.properties. You can still use the link button to paste a Google Maps URL or raw coordinates.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 

@@ -29,7 +29,7 @@ jobs:
 
       - name: Prepare local config
         run: |
-          echo "sdk.dir=${ANDROID_SDK_ROOT}" > local.properties
+          printf "sdk.dir=%s\nMAPS_API_KEY=DISABLED\n" "${ANDROID_SDK_ROOT}" > local.properties
           cat > app/google-services.json <<'JSON'
           {
             "project_info": {
