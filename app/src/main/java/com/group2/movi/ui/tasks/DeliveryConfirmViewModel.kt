@@ -5,7 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.group2.movi.data.repository.ReviewRepository
 import com.group2.movi.data.repository.TaskRepository
+import com.group2.movi.data.repository.UserPreferenceRepository
 import com.group2.movi.data.repository.UserRepository
+import com.group2.movi.domain.model.InteractionAction
+import com.group2.movi.domain.model.InteractionContext
 import com.group2.movi.domain.model.Review
 import com.group2.movi.domain.model.ReviewRole
 import com.group2.movi.domain.model.Task
@@ -34,7 +37,8 @@ class DeliveryConfirmViewModel @Inject constructor(
     savedState: SavedStateHandle,
     private val taskRepo: TaskRepository,
     private val reviewRepo: ReviewRepository,
-    private val userRepo: UserRepository
+    private val userRepo: UserRepository,
+    private val preferenceRepo: UserPreferenceRepository
 ) : ViewModel() {
 
     private val taskId: String = checkNotNull(savedState.get<String>("taskId"))
@@ -91,6 +95,20 @@ class DeliveryConfirmViewModel @Inject constructor(
                         error = friendlyConfirmError(confirmResult.exceptionOrNull())
                     )
                     return@launch
+                }
+                task.carrierId?.takeIf { it.isNotBlank() }?.let { carrierId ->
+                    runCatching {
+                        preferenceRepo.recordTaskInteraction(
+                            userId = carrierId,
+                            taskId = taskId,
+                            action = InteractionAction.COMPLETE,
+                            context = InteractionContext(
+                                category = task.category,
+                                price = task.finalPrice ?: task.offeredPrice,
+                                matchPercent = 0
+                            )
+                        )
+                    }
                 }
             }
 

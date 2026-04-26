@@ -17,6 +17,18 @@ data class TaskMatchInsight(
     val corridorMatch: Boolean = false
 )
 
+data class EnhancedMatchFactors(
+    val routeScore: Double,
+    val categoryScore: Double,
+    val priceScore: Double
+)
+
+data class EnhancedMatchInsight(
+    val baseMatch: TaskMatchInsight,
+    val factors: EnhancedMatchFactors,
+    val compositeScore: Double
+)
+
 const val HIGH_ROUTE_MATCH_PERCENT = 75
 private val GEO_REGEX = Regex("""(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)""")
 private val MAPS_REGEX = Regex("""@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)""")
@@ -123,6 +135,42 @@ fun findBestMatch(
     return schedule.mapNotNull { computeMatch(task, it) }.maxByOrNull { it.score }
 }
 
+fun calculateEnhancedMatch(
+    task: Task,
+    schedule: List<CommuteEntry>,
+    preferences: PreferenceProfile,
+    nowMillis: Long = System.currentTimeMillis()
+): EnhancedMatchInsight? {
+    val baseMatch = findBestMatch(task, schedule, nowMillis) ?: return null
+    val factors = EnhancedMatchFactors(
+        routeScore = baseMatch.matchPercent / 100.0,
+        categoryScore = categoryPreferenceScore(task, preferences),
+        priceScore = pricePreferenceScore(task, preferences)
+    )
+    val compositeScore = (
+        factors.routeScore * 0.65 +
+            factors.categoryScore * 0.20 +
+            factors.priceScore * 0.15
+        ).coerceIn(0.0, 1.0)
+    return EnhancedMatchInsight(
+        baseMatch = baseMatch,
+        factors = factors,
+        compositeScore = compositeScore
+    )
+}
+
+fun enhancedMatchReason(insight: EnhancedMatchInsight?): String? {
+    if (insight == null) return null
+    val reasons = mutableListOf<String>()
+    if (insight.factors.categoryScore >= 0.95) reasons += "preferred category"
+    if (insight.factors.priceScore >= 0.95) reasons += "good price fit"
+    return if (reasons.isEmpty()) {
+        insight.baseMatch.reason
+    } else {
+        "${insight.baseMatch.reason} · ${reasons.joinToString(", ")}"
+    }
+}
+
 fun countMatchingCarriers(
     task: Task,
     carriers: List<User>,
@@ -149,6 +197,21 @@ private fun computeMatch(task: Task, entry: CommuteEntry): TaskMatchInsight? {
         reason = reason,
         corridorMatch = matchPercent >= HIGH_ROUTE_MATCH_PERCENT
     )
+}
+
+private fun categoryPreferenceScore(task: Task, preferences: PreferenceProfile): Double {
+    if (preferences.sampleSize < 3) return 0.5
+    return if (task.category in preferences.topCategories) 1.0 else 0.5
+}
+
+private fun pricePreferenceScore(task: Task, preferences: PreferenceProfile): Double {
+    val median = preferences.medianAcceptedPriceHkd ?: return 0.5
+    if (preferences.sampleSize < 3 || median <= 0.0) return 0.5
+    return when {
+        task.offeredPrice >= median * 0.9 -> 1.0
+        task.offeredPrice >= median * 0.7 -> 0.75
+        else -> 0.45
+    }
 }
 
 private fun haversineKm(a: GeoPoint, b: GeoPoint): Double {

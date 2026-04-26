@@ -5,6 +5,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
 import com.group2.movi.domain.model.User
+import com.group2.movi.domain.model.calculateTrustScore
+import com.group2.movi.domain.model.trustBadgeFor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
@@ -73,7 +75,30 @@ class AuthRepository @Inject constructor(
     suspend fun reloadUser(): Boolean {
         return try {
             auth.currentUser?.reload()?.await()
-            auth.currentUser?.isEmailVerified == true
+            val verified = auth.currentUser?.isEmailVerified == true
+            val uid = auth.currentUser?.uid
+            if (verified && uid != null) {
+                val ref = firestore.collection("users").document(uid)
+                firestore.runTransaction { tx ->
+                    val snap = tx.get(ref)
+                    val score = calculateTrustScore(
+                        isEmailVerified = true,
+                        hasRealNameVerification = snap.get("realNameVerification") != null,
+                        rating = snap.getDouble("rating") ?: 0.0,
+                        totalReviews = (snap.getLong("totalReviews") ?: 0L).toInt(),
+                        tasksCompleted = (snap.getLong("tasksCompleted") ?: 0L).toInt()
+                    )
+                    tx.update(
+                        ref,
+                        mapOf(
+                            "isVerified" to true,
+                            "trustScore" to score,
+                            "trustBadge" to trustBadgeFor(score).name
+                        )
+                    )
+                }.await()
+            }
+            verified
         } catch (e: Exception) {
             false
         }

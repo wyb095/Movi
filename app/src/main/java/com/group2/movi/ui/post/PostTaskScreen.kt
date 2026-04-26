@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -47,7 +49,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +64,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.group2.movi.domain.model.ComplianceAlert
+import com.group2.movi.domain.model.ComplianceChecker
+import com.group2.movi.domain.model.ComplianceSeverity
 import com.group2.movi.domain.model.TaskCategory
 import com.group2.movi.ui.components.displayablePlace
 import java.text.SimpleDateFormat
@@ -74,6 +81,7 @@ fun PostTaskScreen(
     vm: PostTaskViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsState()
+    var complianceDialog by remember { mutableStateOf<ComplianceDialogState?>(null) }
 
     LaunchedEffect(state.submitted) { if (state.submitted) onPosted() }
 
@@ -115,7 +123,30 @@ fun PostTaskScreen(
                     ) { Text("Back") }
                 }
                 Button(
-                    onClick = { if (state.step == 3) vm.submit() else vm.next() },
+                    onClick = {
+                        if (state.step == 3) {
+                            val alerts = ComplianceChecker.checkTaskCompliance(buildTaskDraft(state))
+                            val blocking = alerts.filter { it.severity == ComplianceSeverity.BLOCKING }
+                            val warnings = alerts.filter { it.severity == ComplianceSeverity.WARNING }
+                            when {
+                                blocking.isNotEmpty() -> {
+                                    complianceDialog = ComplianceDialogState(
+                                        alerts = blocking,
+                                        blocking = true
+                                    )
+                                }
+                                warnings.isNotEmpty() -> {
+                                    complianceDialog = ComplianceDialogState(
+                                        alerts = warnings,
+                                        blocking = false
+                                    )
+                                }
+                                else -> vm.submit()
+                            }
+                        } else {
+                            vm.next()
+                        }
+                    },
                     enabled = state.stepValid
                         && !state.submitting
                         && !state.uploadingPhoto
@@ -127,6 +158,43 @@ fun PostTaskScreen(
                 }
             }
         }
+    }
+
+    complianceDialog?.let { dialog ->
+        AlertDialog(
+            onDismissRequest = { complianceDialog = null },
+            title = { Text(if (dialog.blocking) "Task blocked" else "Review compliance notices") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dialog.alerts.forEach { alert ->
+                        Text(
+                            "• ${alert.title}: ${alert.message}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Action: ${alert.suggestedAction}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (!dialog.blocking) {
+                    Button(onClick = {
+                        complianceDialog = null
+                        vm.submit()
+                    }) {
+                        Text("I understand, post task")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { complianceDialog = null }) {
+                    Text(if (dialog.blocking) "Go back and edit" else "Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -339,12 +407,30 @@ private fun DeadlinePicker(deadlineMs: Long?, onSelect: (Long) -> Unit) {
 
 @Composable
 private fun Step4PriceReview(state: PostFormState, vm: PostTaskViewModel) {
+    val complianceAlerts = remember(
+        state.category,
+        state.title,
+        state.description,
+        state.priceHkd,
+        state.declaredItemValueHkd
+    ) {
+        ComplianceChecker.checkTaskCompliance(buildTaskDraft(state))
+    }
     Text("Price & review", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
     OutlinedTextField(
         value = state.priceHkd,
         onValueChange = vm::setPrice,
         label = { Text("Price offered (HKD, min 5)") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    OutlinedTextField(
+        value = state.declaredItemValueHkd,
+        onValueChange = vm::setDeclaredItemValue,
+        label = { Text("Declared item value (HKD, optional)") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
@@ -377,6 +463,29 @@ private fun Step4PriceReview(state: PostFormState, vm: PostTaskViewModel) {
                 )
             }
             Text("• Offered: HK$ ${state.priceHkd.ifBlank { "—" }}")
+            Text("• Declared value: HK$ ${state.declaredItemValueHkd.ifBlank { "—" }}")
+        }
+    }
+
+    if (complianceAlerts.isNotEmpty()) {
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Compliance preview", fontWeight = FontWeight.SemiBold)
+                complianceAlerts.take(4).forEach { alert ->
+                    Text(
+                        "• ${alert.title}: ${alert.message}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when (alert.severity) {
+                            ComplianceSeverity.BLOCKING -> MaterialTheme.colorScheme.error
+                            ComplianceSeverity.WARNING -> MaterialTheme.colorScheme.onSurface
+                            ComplianceSeverity.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
         }
     }
 
@@ -389,3 +498,8 @@ private fun Step4PriceReview(state: PostFormState, vm: PostTaskViewModel) {
         )
     }
 }
+
+private data class ComplianceDialogState(
+    val alerts: List<ComplianceAlert>,
+    val blocking: Boolean
+)

@@ -15,6 +15,9 @@ data class User(
     val totalReviews: Int = 0,
     val totalEarnings: Double = 0.0,
     val tasksCompleted: Int = 0,
+    val realNameVerification: RealNameVerification? = null,
+    val trustScore: Int = DEFAULT_TRUST_SCORE,
+    val trustBadge: TrustBadge = TrustBadge.BRONZE,
     val fcmToken: String? = null,
     val createdAt: Timestamp? = null,
     val commuteSchedule: List<CommuteEntry> = emptyList()

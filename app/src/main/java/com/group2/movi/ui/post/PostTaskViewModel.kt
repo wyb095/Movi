@@ -35,6 +35,7 @@ data class PostFormState(
     val deadlineEpochMs: Long? = null,
     val isUrgent: Boolean = false,
     val priceHkd: String = "",
+    val declaredItemValueHkd: String = "",
     val customsConfirmed: Boolean = false,
     val submitting: Boolean = false,
     val submitError: String? = null,
@@ -108,6 +109,7 @@ class PostTaskViewModel @Inject constructor(
     fun setDeadline(epochMs: Long) = _state.update { it.copy(deadlineEpochMs = epochMs) }
     fun setUrgent(v: Boolean) = _state.update { it.copy(isUrgent = v) }
     fun setPrice(v: String) = _state.update { it.copy(priceHkd = v.filter { c -> c.isDigit() || c == '.' }) }
+    fun setDeclaredItemValue(v: String) = _state.update { it.copy(declaredItemValueHkd = v.filter { c -> c.isDigit() || c == '.' }) }
     fun setCustoms(v: Boolean) = _state.update { it.copy(customsConfirmed = v) }
 
     fun next() {
@@ -176,24 +178,11 @@ class PostTaskViewModel @Inject constructor(
         _state.update { it.copy(submitting = true, submitError = null) }
         viewModelScope.launch {
             val me = userRepo.getUser(uid)
-            val task = Task(
+            val task = buildTaskDraft(
+                state = s,
                 requesterId = uid,
                 requesterName = me?.displayName ?: "",
-                requesterRating = me?.rating ?: 0.0,
-                category = s.category,
-                title = s.title.trim(),
-                description = s.description.trim(),
-                itemPhotoUrl = s.uploadedPhotoUrl,
-                pickupLocation = s.pickupLocation,
-                pickupAddress = s.pickupAddress.trim(),
-                dropoffLocation = s.dropoffLocation,
-                dropoffAddress = s.dropoffAddress.trim(),
-                direction = s.direction,
-                requiredBefore = s.deadlineEpochMs?.let { Timestamp(java.util.Date(it)) },
-                offeredPrice = s.priceHkd.toDoubleOrNull() ?: 0.0,
-                isUrgent = s.isUrgent,
-                customsDeclaration = s.customsConfirmed,
-                escrowHoldAmount = s.priceHkd.toDoubleOrNull() ?: 0.0
+                requesterRating = me?.rating ?: 0.0
             )
             val res = taskRepo.postTask(task)
             _state.update {
@@ -214,3 +203,29 @@ class PostTaskViewModel @Inject constructor(
         }
     }
 }
+
+internal fun buildTaskDraft(
+    state: PostFormState,
+    requesterId: String = "",
+    requesterName: String = "",
+    requesterRating: Double = 0.0
+): Task = Task(
+    requesterId = requesterId,
+    requesterName = requesterName,
+    requesterRating = requesterRating,
+    category = state.category,
+    title = state.title.trim(),
+    description = state.description.trim(),
+    itemPhotoUrl = state.uploadedPhotoUrl,
+    pickupLocation = state.pickupLocation,
+    pickupAddress = state.pickupAddress.trim(),
+    dropoffLocation = state.dropoffLocation,
+    dropoffAddress = state.dropoffAddress.trim(),
+    direction = state.direction,
+    requiredBefore = state.deadlineEpochMs?.let { Timestamp(java.util.Date(it)) },
+    offeredPrice = state.priceHkd.toDoubleOrNull() ?: 0.0,
+    declaredItemValueHkd = state.declaredItemValueHkd.toDoubleOrNull(),
+    isUrgent = state.isUrgent,
+    customsDeclaration = state.customsConfirmed,
+    escrowHoldAmount = state.priceHkd.toDoubleOrNull() ?: 0.0
+)

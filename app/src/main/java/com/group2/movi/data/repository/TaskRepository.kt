@@ -10,6 +10,8 @@ import com.google.firebase.storage.FirebaseStorage
 import com.group2.movi.domain.model.EscrowStatus
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskStatus
+import com.group2.movi.domain.model.calculateTrustScore
+import com.group2.movi.domain.model.trustBadgeFor
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -230,6 +232,18 @@ class TaskRepository @Inject constructor(
             val carrierSnap = carrierRef?.let { tx.get(it) }
             val currentEarnings = carrierSnap?.getDouble("totalEarnings") ?: 0.0
             val completed = carrierSnap?.getLong("tasksCompleted") ?: 0L
+            val updatedCompleted = completed + 1
+            val updatedTrustScore = if (carrierSnap != null) {
+                calculateTrustScore(
+                    isEmailVerified = carrierSnap.getBoolean("isVerified") == true,
+                    hasRealNameVerification = carrierSnap.get("realNameVerification") != null,
+                    rating = carrierSnap.getDouble("rating") ?: 0.0,
+                    totalReviews = (carrierSnap.getLong("totalReviews") ?: 0L).toInt(),
+                    tasksCompleted = updatedCompleted.toInt()
+                )
+            } else {
+                null
+            }
 
             tx.update(
                 taskRef,
@@ -246,7 +260,9 @@ class TaskRepository @Inject constructor(
                     carrierRef,
                     mapOf(
                         "totalEarnings" to currentEarnings + amount,
-                        "tasksCompleted" to completed + 1
+                        "tasksCompleted" to updatedCompleted,
+                        "trustScore" to updatedTrustScore,
+                        "trustBadge" to updatedTrustScore?.let { trustBadgeFor(it).name }
                     )
                 )
             }

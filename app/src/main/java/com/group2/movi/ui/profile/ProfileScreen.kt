@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.group2.movi.ui.components.TrustBadgeDisplay
 import com.group2.movi.ui.theme.MoviAccent
 import com.group2.movi.ui.theme.MoviWarning
 
@@ -55,6 +57,7 @@ import com.group2.movi.ui.theme.MoviWarning
 @Composable
 fun ProfileScreen(
     onEditProfile: () -> Unit,
+    onRealNameVerify: () -> Unit,
     onSchedule: () -> Unit,
     onEarnings: () -> Unit,
     onReviews: () -> Unit,
@@ -113,6 +116,10 @@ fun ProfileScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                        user?.let {
+                            Spacer(Modifier.height(8.dp))
+                            TrustBadgeDisplay(badge = it.trustBadge, score = it.trustScore)
+                        }
                     }
                     Icon(
                         Icons.Outlined.Edit,
@@ -130,6 +137,11 @@ fun ProfileScreen(
                 StatCard("Rating", "★ ${"%.1f".format(user?.rating ?: 0.0)}", Modifier.weight(1f))
             }
 
+            ProfileRow(
+                Icons.Filled.VerifiedUser,
+                if (user?.realNameVerification != null) "Real-name verified" else "Verify real name",
+                onClick = onRealNameVerify
+            )
             ProfileRow(Icons.Filled.Schedule, "My commute schedule", onClick = onSchedule)
             ProfileRow(Icons.Filled.Payments, "Earnings", onClick = onEarnings)
             ProfileRow(Icons.Filled.RateReview, "Reviews", onClick = onReviews)

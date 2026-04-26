@@ -51,6 +51,7 @@ import coil.compose.AsyncImage
 @Composable
 fun EditProfileScreen(
     onBack: () -> Unit,
+    onVerifyRealName: () -> Unit,
     vm: ProfileViewModel = hiltViewModel()
 ) {
     val user by vm.user.collectAsState()
@@ -144,6 +145,17 @@ fun EditProfileScreen(
                 } else {
                     Text("Save", fontWeight = FontWeight.SemiBold)
                 }
+            }
+
+            Button(
+                onClick = onVerifyRealName,
+                enabled = !editState.savingDisplayName && !editState.uploadingPhoto,
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Text(
+                    if (user?.realNameVerification != null) "Review real-name verification" else "Verify real name",
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }

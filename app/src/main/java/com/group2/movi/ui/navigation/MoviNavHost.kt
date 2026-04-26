@@ -37,6 +37,7 @@ import com.group2.movi.ui.post.PostTaskScreen
 import com.group2.movi.ui.profile.EditProfileScreen
 import com.group2.movi.ui.profile.EarningsScreen
 import com.group2.movi.ui.profile.ProfileScreen
+import com.group2.movi.ui.profile.RealNameVerifyScreen
 import com.group2.movi.ui.profile.ReviewsScreen
 import com.group2.movi.ui.profile.ScheduleScreen
 import com.group2.movi.ui.tasks.ChatScreen
@@ -144,6 +145,7 @@ fun MoviNavHost(navController: NavHostController) {
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onEditProfile = { navController.navigate(Screen.EditProfile.route) },
+                    onRealNameVerify = { navController.navigate(Screen.RealNameVerify.route) },
                     onSchedule = { navController.navigate(Screen.Schedule.route) },
                     onEarnings = { navController.navigate(Screen.Earnings.route) },
                     onReviews = { navController.navigate(Screen.Reviews.route) },
@@ -208,7 +210,13 @@ fun MoviNavHost(navController: NavHostController) {
 
             // Profile sub-screens
             composable(Screen.EditProfile.route) {
-                EditProfileScreen(onBack = { navController.popBackStack() })
+                EditProfileScreen(
+                    onBack = { navController.popBackStack() },
+                    onVerifyRealName = { navController.navigate(Screen.RealNameVerify.route) }
+                )
+            }
+            composable(Screen.RealNameVerify.route) {
+                RealNameVerifyScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.Schedule.route) {
                 ScheduleScreen(onBack = { navController.popBackStack() })

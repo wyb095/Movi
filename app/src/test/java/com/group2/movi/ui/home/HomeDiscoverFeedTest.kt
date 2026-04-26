@@ -4,7 +4,9 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.GeoPoint
 import com.group2.movi.domain.model.CommuteEntry
 import com.group2.movi.domain.model.HIGH_ROUTE_MATCH_PERCENT
+import com.group2.movi.domain.model.PreferenceProfile
 import com.group2.movi.domain.model.Task
+import com.group2.movi.domain.model.TaskCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -42,12 +44,16 @@ class HomeDiscoverFeedTest {
         createdAtSeconds: Long,
         direction: String = "SZ_TO_HK",
         isUrgent: Boolean = false,
+        category: String = TaskCategory.PARCEL,
+        offeredPrice: Double = 100.0,
         pickupLocation: GeoPoint? = null,
         dropoffLocation: GeoPoint? = null
     ): Task = Task(
         taskId = id,
         requesterId = requesterId,
         title = id,
+        category = category,
+        offeredPrice = offeredPrice,
         direction = direction,
         isUrgent = isUrgent,
         pickupLocation = pickupLocation,
@@ -219,5 +225,42 @@ class HomeDiscoverFeedTest {
         )
         assertNull(feed.first().matchPercent)
         assertEquals(DiscoverMatchState.OWN, feed.last().matchState)
+    }
+
+    @Test
+    fun `buildDiscoverFeed reranks strong matches using category and price preferences`() {
+        val preferred = task(
+            id = "preferred",
+            requesterId = "other-a",
+            createdAtSeconds = 100,
+            category = TaskCategory.FOOD,
+            offeredPrice = 120.0,
+            pickupLocation = exactOrigin,
+            dropoffLocation = exactDestination
+        )
+        val neutral = task(
+            id = "neutral",
+            requesterId = "other-b",
+            createdAtSeconds = 200,
+            category = TaskCategory.OTHER,
+            offeredPrice = 60.0,
+            pickupLocation = exactOrigin,
+            dropoffLocation = exactDestination
+        )
+
+        val feed = buildDiscoverFeed(
+            tasks = listOf(neutral, preferred),
+            currentUid = "me",
+            schedule = listOf(routeCommute),
+            preferences = PreferenceProfile(
+                userId = "me",
+                topCategories = listOf(TaskCategory.FOOD),
+                medianAcceptedPriceHkd = 120.0,
+                sampleSize = 5
+            )
+        )
+
+        assertEquals(listOf("preferred", "neutral"), feed.map { it.task.taskId })
+        assertTrue(feed.first().compositeScore > feed.last().compositeScore)
     }
 }

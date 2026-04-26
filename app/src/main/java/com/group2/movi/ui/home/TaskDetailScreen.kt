@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.group2.movi.domain.model.ComplianceChecker
+import com.group2.movi.domain.model.ComplianceSeverity
 import com.group2.movi.domain.model.EscrowStatus
 import com.group2.movi.domain.model.HIGH_ROUTE_MATCH_PERCENT
 import com.group2.movi.domain.model.TaskStatus
@@ -55,6 +57,7 @@ import com.group2.movi.ui.components.displayablePlace
 import com.group2.movi.ui.components.InfoRow
 import com.group2.movi.ui.components.LoadingBox
 import com.group2.movi.ui.components.Pill
+import com.group2.movi.ui.components.TrustBadgeDisplay
 import com.group2.movi.ui.theme.MoviAccent
 import com.group2.movi.ui.theme.MoviWarning
 
@@ -101,6 +104,8 @@ fun TaskDetailScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                val complianceAlerts = ComplianceChecker.checkTaskCompliance(task)
+
                 // Header card with photo + price
                 Card(shape = RoundedCornerShape(12.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -166,6 +171,21 @@ fun TaskDetailScreen(
                         Spacer(Modifier.size(8.dp))
                         InfoRow("Name", task.requesterName.ifBlank { "Anonymous" })
                         InfoRow("Rating", "★ ${"%.1f".format(task.requesterRating)}")
+                        state.requesterUser?.let { requester ->
+                            Spacer(Modifier.size(8.dp))
+                            TrustBadgeDisplay(
+                                badge = requester.trustBadge,
+                                score = requester.trustScore
+                            )
+                            if (requester.realNameVerification != null) {
+                                Spacer(Modifier.size(6.dp))
+                                Text(
+                                    "Real-name verified",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -233,6 +253,38 @@ fun TaskDetailScreen(
                     }
                 }
 
+                Card(shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Customs & compliance", fontWeight = FontWeight.SemiBold)
+                        when {
+                            complianceAlerts.isEmpty() -> {
+                                Text(
+                                    "No major compliance warnings were detected from the task details.",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            else -> {
+                                complianceAlerts.take(3).forEach { alert ->
+                                    Text(
+                                        "• ${alert.title}: ${alert.message}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (alert.severity == ComplianceSeverity.BLOCKING) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            "Carriers should confirm duties, declarations, and document responsibilities before pickup.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Spacer(Modifier.size(12.dp))
 
                 // Actions
@@ -280,19 +332,34 @@ fun TaskDetailScreen(
     }
 
     if (showCustomsDialog) {
+        val dialogTask = state.task
         AlertDialog(
             onDismissRequest = { showCustomsDialog = false },
             title = { Text("Customs compliance") },
             text = {
-                Text(
-                    "By accepting this task, you confirm the item is not prohibited (firearms, fresh meat, live animals, counterfeit goods, prescription medication without documentation, or cash over HKD 20,000 / RMB 20,000).\n\nMovi is a shared-commute platform, not a smuggling service."
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "By accepting this task, you confirm the item is not prohibited (firearms, fresh meat, live animals, counterfeit goods, prescription medication without documentation, or cash over HKD 20,000 / RMB 20,000).\n\nMovi is a shared-commute platform, not a smuggling service."
+                    )
+                    if (dialogTask != null) {
+                        val alerts = ComplianceChecker.checkTaskCompliance(dialogTask)
+                        alerts.filter { it.severity != ComplianceSeverity.INFO }.take(2).forEach { alert ->
+                            Text(
+                                "• ${alert.title}: ${alert.suggestedAction}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             },
             confirmButton = {
                 Button(onClick = {
                     showCustomsDialog = false
                     vm.accept(onAccepted)
-                }) { Text("Confirm, hold escrow, accept") }
+                }) {
+                    Text("Confirm, hold escrow, accept")
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showCustomsDialog = false }) { Text("Cancel") }

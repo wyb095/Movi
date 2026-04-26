@@ -24,6 +24,7 @@ data class Task(
     val direction: String = "SZ_TO_HK", // HK_TO_SZ or SZ_TO_HK
     val requiredBefore: Timestamp? = null,
     val offeredPrice: Double = 0.0,
+    val declaredItemValueHkd: Double? = null,
     val finalPrice: Double? = null,
     val escrowHeld: Boolean = false,
     val escrowStatus: String = EscrowStatus.NOT_HELD,

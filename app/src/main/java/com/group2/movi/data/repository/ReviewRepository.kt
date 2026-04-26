@@ -5,6 +5,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ktx.toObject
 import com.group2.movi.domain.model.Review
 import com.group2.movi.domain.model.ReviewRole
+import com.group2.movi.domain.model.calculateTrustScore
+import com.group2.movi.domain.model.trustBadgeFor
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -35,12 +37,21 @@ class ReviewRepository @Inject constructor(
             val currentCount = userSnap.getLong("totalReviews") ?: 0L
             val newCount = currentCount + 1
             val newAvg = (currentRating * currentCount + review.rating) / newCount
+            val trustScore = calculateTrustScore(
+                isEmailVerified = userSnap.getBoolean("isVerified") == true,
+                hasRealNameVerification = userSnap.get("realNameVerification") != null,
+                rating = newAvg,
+                totalReviews = newCount.toInt(),
+                tasksCompleted = (userSnap.getLong("tasksCompleted") ?: 0L).toInt()
+            )
 
             val toWrite = review.copy(createdAt = Timestamp.now())
             tx.set(reviewRef, toWrite)
             tx.update(userRef, mapOf(
                 "rating" to newAvg,
-                "totalReviews" to newCount
+                "totalReviews" to newCount,
+                "trustScore" to trustScore,
+                "trustBadge" to trustBadgeFor(trustScore).name
             ))
 
             val flagField = if (review.reviewerRole == ReviewRole.REQUESTER) {

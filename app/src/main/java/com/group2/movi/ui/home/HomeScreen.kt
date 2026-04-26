@@ -20,13 +20,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -56,6 +61,8 @@ import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.firebase.Timestamp
 import com.group2.movi.config.MapsConfig
+import com.group2.movi.domain.model.ComplianceChecker
+import com.group2.movi.domain.model.ComplianceSeverity
 import com.group2.movi.domain.model.Task
 import com.group2.movi.domain.model.TaskCategory
 import com.group2.movi.ui.components.EmptyState
@@ -78,8 +85,20 @@ fun HomeScreen(
 ) {
     val state by vm.state.collectAsState()
     var mode by rememberSaveable { mutableStateOf(DiscoverMode.LIST) }
+    val snackbarHostState = androidx.compose.runtime.remember { SnackbarHostState() }
+    var quickAcceptCard by androidx.compose.runtime.remember { mutableStateOf<DiscoverTask?>(null) }
+
+    LaunchedEffect(state.feedbackMessage, state.feedbackError) {
+        val feedback = state.feedbackError ?: state.feedbackMessage
+        if (!feedback.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(feedback)
+            if (state.feedbackMessage != null) quickAcceptCard = null
+            vm.clearFeedback()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Discover tasks", fontWeight = FontWeight.Bold) },
@@ -120,14 +139,73 @@ fun HomeScreen(
                             task = card.task,
                             matchState = card.matchState,
                             matchPercent = card.matchPercent,
-                            matchReason = card.match?.reason,
+                            matchReason = card.matchReason,
                             hasCommuteSchedule = state.hasCommuteSchedule,
-                            onClick = { onTaskClick(card.task.taskId) }
+                            onClick = { onTaskClick(card.task.taskId) },
+                            onQuickAccept = if (
+                                card.matchState == DiscoverMatchState.MATCHED &&
+                                !card.isOwnTask
+                            ) {
+                                { quickAcceptCard = card }
+                            } else {
+                                null
+                            },
+                            accepting = state.acceptingTaskId == card.task.taskId
                         )
                     }
                 }
             }
         }
+    }
+
+    quickAcceptCard?.let { card ->
+        val alerts = ComplianceChecker.checkTaskCompliance(card.task)
+        val warningAlerts = alerts.filter { it.severity != ComplianceSeverity.INFO }.take(2)
+        val isAccepting = state.acceptingTaskId == card.task.taskId
+        AlertDialog(
+            onDismissRequest = { if (!isAccepting) quickAcceptCard = null },
+            title = { Text("Quick accept task?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(card.task.title.ifBlank { "Task" }, fontWeight = FontWeight.SemiBold)
+                    Text("HK$ ${card.task.offeredPrice.toInt()}")
+                    card.matchReason?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (warningAlerts.isNotEmpty()) {
+                        warningAlerts.forEach { alert ->
+                            Text(
+                                "• ${alert.title}: ${alert.message}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Text(
+                            "Please confirm the item still complies with customs rules before pickup.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { vm.quickAcceptTask(card.task.taskId) },
+                    enabled = !isAccepting
+                ) {
+                    Text(if (isAccepting) "Accepting..." else "Accept task")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { quickAcceptCard = null },
+                    enabled = !isAccepting
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -289,7 +367,9 @@ fun TaskCard(
     matchPercent: Int?,
     matchReason: String?,
     hasCommuteSchedule: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onQuickAccept: (() -> Unit)? = null,
+    accepting: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -390,6 +470,15 @@ fun TaskCard(
                         MaterialTheme.colorScheme.onSurfaceVariant
                     }
                 )
+            }
+
+            if (onQuickAccept != null) {
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onQuickAccept, enabled = !accepting) {
+                        Text(if (accepting) "Accepting..." else "Quick accept")
+                    }
+                }
             }
         }
     }
